@@ -1,0 +1,205 @@
+lib = "{{ lib }}"
+cell = "{{ cell }}"
+view = "{{ view }}"
+state = "{{ state }}"
+init_file = "{{ init_file }}"
+save_dir = "{{ save_dir }}"
+precision = {{ precision }}
+sim_tag = "{{ sim_tag }}"
+job_opt_list = {{ job_opt_str }}
+
+; initialize environment variables
+when( strlen(init_file) > 0
+    load(init_file)
+)
+
+; save parametric waveform values as a flattened list.
+procedure( save_param_wave_values(wave fmt line_fmt fhandle)
+    let( (vec wave_cls tmp_val)
+        if( drIsWaveform(wave) then
+            ; 1D waveform, simply print all values
+            vec = drGetWaveformYVec(wave)
+            wave_cls = className(classOf(drGetElem(vec 0)))
+            if( wave_cls == 'adtComplex then
+                ; print complex
+                for( i 0 drVectorLength(vec) - 1
+                    tmp_val = drGetElem(vec i)
+                    if( imag(tmp_val) < 0 then
+                        ; fix for negative imaginary part.
+                        sprintf(line_fmt "%s%sj\n" fmt fmt)
+                    else
+                        sprintf(line_fmt "%s+%sj\n" fmt fmt)
+                    )
+                    fprintf(fhandle line_fmt real(tmp_val) imag(tmp_val))
+                )
+            else
+                ; print real value
+                for( i 0 drVectorLength(vec) - 1
+                    fprintf(fhandle line_fmt drGetElem(vec i))
+                )
+            )
+        else
+            ; parametric waveform, recurse
+            foreach(val sweepValues(wave)
+                save_param_wave_values(famValue(wave val) fmt line_fmt fhandle)
+            )
+        )
+    )
+)
+
+
+; define save functions
+; save a waveform to file.
+; the given waveform will be saved to the file "<directory>/<var_name>.data" as a flattened 1D array.
+; the sweep parameter names of this waveform will be saved to the file "<directory>/<var_name>.sweep",
+; and the values of each parameter will be saved to the file "<directory>/<swp_var>.info".
+; data_list_struct is a tconc struct of (waveform_name, waveform_data_file_handle) pairs.
+procedure( save_waveform(directory var_name wave precision data_list_struct)
+    let( (fmt line_fmt wave_cls entry data_file sweep_file fhandle
+          name_list val_list sweep_df iter_wave)
+        sprintf(fmt "%%.%de" precision)
+        sprintf(line_fmt "%s\n" fmt)
+        wave_cls = className(classOf(wave))
+
+        if( not( entry = assoc( var_name cdar(data_list_struct) ) ) then
+            ; first time saving this variable
+            sprintf(data_file "%s/%s.data" directory var_name)
+            sprintf(sweep_file "%s/%s.sweep" directory var_name)
+            cond(
+            ( or( drIsWaveform(wave) drIsParamWave(wave) )
+                ; save sweep names
+                fhandle = outfile( sweep_file "w" )
+                name_list = sweepNames(wave)
+                foreach(swp_name name_list
+                    fprintf(fhandle "%s\n" swp_name)
+                )
+                close(fhandle)
+
+                ; save sweep values
+                iter_wave = wave
+                foreach(swp_name name_list
+                    ; save output most sweep values
+                    val_list = sweepValues(iter_wave)
+                    sprintf(sweep_df "%s/%s.info" directory swp_name)
+                    unless( isFile(sweep_df)
+                       fhandle = outfile( sweep_df "w" )
+                       foreach(val val_list
+                           fprintf(fhandle line_fmt val)
+                       )
+                       close(fhandle)
+                    )
+                    ; remove outer sweep
+                    when( drIsParamWave(iter_wave)
+                        iter_wave = famValue(iter_wave car(val_list))
+                    )
+                )
+
+                fhandle = outfile( data_file "w" )
+            )
+            ( or( wave_cls == 'flonum wave_cls == 'fixnum wave_cls == 'adtComplex )
+                ; scalar data, make empty sweep file
+                fhandle = outfile( sweep_file "w")
+                close(fhandle)
+                fhandle = outfile( data_file "w" )
+            )
+            ( t
+                ; unsupported type
+                error("Unsupported data for output %s: %A\n" var_name wave)
+            )
+            )
+            tconc( data_list_struct list(var_name fhandle) )
+        else
+            fhandle = cadr(entry)
+        )
+
+        ; append data to file
+        if( or( drIsWaveform(wave) drIsParamWave(wave) ) then
+            save_param_wave_values(wave fmt line_fmt fhandle)
+        else
+            ; print single point value
+            if( wave_cls == 'adtComplex then
+                ; print complex
+                if( imag(wave) < 0 then
+                    ; fix for negative imaginary part.
+                    sprintf(line_fmt "%s%sj\n" fmt fmt)
+                else
+                    sprintf(line_fmt "%s+%sj\n" fmt fmt)
+                )
+                fprintf(fhandle line_fmt real(wave) imag(wave))
+            else
+                fprintf(fhandle line_fmt wave)
+            )
+        )
+        't
+    )
+)
+
+ocnSetXLMode()
+ocnxlTargetCellView(lib cell view)
+ocnxlLoadSetupState(state 'overwrite)
+ocnxlHistoryPrefix(sim_tag)
+ocnxlJobSetup(job_opt_list)
+printf("*Info* Creating netlist...\n")
+createNetlist( ?recreateAll t ?display nil )
+printf("*Info* Starting simulation...\n")
+ocnxlRun(?mode 'sweepAndCorners ?nominalCornerEnabled nil ?allCornersEnabled 't
+         ?allSweepsEnabled 't)
+
+; load result database
+hist_name = ocnxlGetCurrentHistory()
+rdb = axlReadHistoryResDB(hist_name)
+point_list = rdb->points()
+
+sprintf(sweep_fname "%s/sweep.info" save_dir)
+sweep_f = outfile( sweep_fname "w" )
+
+; write sweep parameters title
+when( point_list
+    point = car(point_list)
+    test_list = point->tests()
+    when( test_list
+        corner = car(test_list)->cornerName
+        par_names = setof( name point->params(?corner corner ?sortBy 'name)~>name
+                           and( (name != "corModelSpec") (name != "temperature") ) )
+
+        fprintf(sweep_f "corner ")
+        fprintf(sweep_f "%s\n" buildString( par_names " " ))
+    )
+)
+
+; iterate through each design point and save data.
+data_list_struct = tconc(nil 0)
+total_points = length(point_list)
+cur_idx = 1
+foreach(point point_list
+    printf("*Info* saving process: %d/%d\n" cur_idx total_points)
+    cur_idx = cur_idx + 1
+    foreach(test point->tests()
+        ; write param values to file.
+        corner = test->cornerName
+        params = setof(par point->params(?corner corner ?sortBy 'name)
+                       and( (par->name != "corModelSpec") (par->name != "temperature") ) )
+        param_vals = mapcar( lambda( (par) par->valueAsString(?digits precision ?notation 'eng) ) params )
+        fprintf(sweep_f "%s " corner)
+        fprintf(sweep_f "%s\n" buildString( param_vals " " ))
+
+        ; open results
+        openResults(test->resultsDir)
+
+        {% for var, expr in outputs.items() %}
+        tmp = {{ expr }}
+        save_waveform( save_dir "{{ var }}" tmp precision data_list_struct )
+        {% endfor %}
+
+    )
+)
+
+; close opened files
+close(sweep_f)
+foreach( entry cdar(data_list_struct)
+    close(cadr(entry))
+)
+
+ocnxlEndXLMode()
+
+exit()

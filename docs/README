@@ -1,0 +1,15 @@
+To build/update documentation:
+
+1. make sure BAG Python's bin folder is in your path.
+
+2. run: 
+
+   ./refresh_api.sh
+   
+   to generate API documentations.
+
+3. run:
+
+   make html
+
+   to build the documentation webpage.

@@ -1,0 +1,19 @@
+calibre_view_netlist_file : {{ netlist_file }}
+output_library : {{ lib_name }}
+schematic_library : {{ lib_name }}
+cell_name : {{ cell_name }}
+cellmap_file : {{ calibre_cellmap }}
+calibreview_log_file : ./calview.log
+calibreview_name : {{ view_name }}
+calibreview_type : schematic
+create_terminals : if_matching
+preserve_device_case : on
+execute_callbacks : off
+reset_properties : (m=1)
+magnify_devices_by : 1
+magnify_parasitics_by : 1
+device_placement : arrayed
+parasitic_placement : arrayed
+show_parasitic_polygons : off
+open_calibreview : don't_open
+generate_spectre_netlist : off

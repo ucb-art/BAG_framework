@@ -1,0 +1,49 @@
+case                               "preserve"
+cellListFile                       ""
+cellMap                            ""
+cellNamePrefix                     ""
+cellNameSuffix                     ""
+convertDot                         "node"
+convertPin                         "geometry"
+#doNotPreservePcellPins
+#flattenPcells
+#flattenVias
+fontMap                            ""
+#ignoreLines
+#ignorePcellEvalFail
+labelCase                          "preserve"
+labelDepth                         "1"
+labelMap                           ""
+layerMap                           ""
+library                            "{{lib_name}}"
+logFile                            "strmOut.log"
+maxVertices                        "200"
+#mergePathSegsToPath
+#noConvertHalfWidthPath
+noInfo                             ""
+#noObjectProp
+#noOutputTextDisplays
+#noOutputUnplacedInst
+noWarn                             ""
+objectMap                          ""
+outputDir                          "{{run_dir}}"
+#pathToPolygon
+pinAttNum                          "0"
+propMap                            ""
+#propValueOnly
+#rectToBox
+refLibList                         ""
+#replaceBusBitChar
+#reportPrecisionLoss
+#respectGDSIINameLimit
+runDir                             "{{run_dir}}"
+#snapToGrid
+strmFile                           "{{output_name}}"
+strmVersion                        "5"
+summaryFile                        ""
+techLib                            ""
+topCell                            "{{cell_name}}"
+userSkillFile                      ""
+viaMap                             ""
+view                               "{{view_name}}"
+warnToErr                          ""

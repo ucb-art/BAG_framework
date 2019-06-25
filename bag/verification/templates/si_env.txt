@@ -1,0 +1,27 @@
+simStopList = '("auCdl")
+simViewList = '("auCdl" "schematic")
+globalGndSig = ""
+globalPowerSig = ""
+shrinkFACTOR = 0
+checkScale = "meter"
+diodeCheck = "none"
+capacitorCheck = "none"
+resistorCheck = "none"
+resistorModel = ""
+shortRES = 2000
+simNetlistHier = 't
+pinMAP = 'nil
+displayPININFO = 't
+checkLDD = 'nil
+connects = ""
+setEQUIV = ""
+simRunDir = "{{run_dir}}"
+hnlNetlistFileName = "{{output_name}}"
+simSimulator = "auCdl"
+simViewName = "{{view_name}}"
+simCellName = "{{cell_name}}"
+simLibName = "{{lib_name}}"
+incFILE = "{{source_added_file}}"
+cdlSimViewList = '("auCdl" "schematic")
+cdlSimStopList = '("auCdl")
+
