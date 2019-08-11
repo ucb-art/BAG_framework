@@ -3570,15 +3570,16 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
                                                        unit_mode=True)
                     top_warrs[idx].append(warr)
                     cur_bounds = top_bounds
+                    tr_ext, w_ext = tuple2_to_int(tr_w_ext)
                 elif cur_layer_id == tr_layer_id - 1:
                     tr_w_ext = grid.get_via_extensions(cur_layer_id, cur_width, width,
                                                        unit_mode=True)
                     bot_warrs[idx].append(warr)
                     cur_bounds = bot_bounds
+                    w_ext, tr_ext = tuple2_to_int(tr_w_ext)
                 else:
                     raise ValueError('Cannot connect wire on layer %d '
                                      'to track on layer %d' % (cur_layer_id, tr_layer_id))
-                tr_ext, w_ext = tuple2_to_int(tr_w_ext)
 
                 # compute wire lower/upper including via extension
                 if cur_bounds[0] is None:
