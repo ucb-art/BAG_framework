@@ -179,8 +179,8 @@ class PVS(VirtuosoChecker):
         return flow_list
 
     def setup_rcx_flow(self, lib_name, cell_name, sch_view='schematic', lay_view='layout',
-                       params=None):
-        # type: (str, str, str, str, Optional[Dict[str, Any]]) -> Sequence[FlowInfo]
+                       params=None, **kwargs):
+        # type: (str, str, str, str, Optional[Dict[str, Any]], Any) -> Sequence[FlowInfo]
 
         # update default RCX parameters.
         rcx_params_actual = self.default_rcx_params.copy()

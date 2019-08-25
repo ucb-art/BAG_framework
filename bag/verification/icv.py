@@ -177,8 +177,8 @@ class ICV(VirtuosoChecker):
         return flow_list
 
     def setup_rcx_flow(self, lib_name, cell_name, sch_view='schematic', lay_view='layout',
-                       params=None):
-        # type: (str, str, str, str, Optional[Dict[str, Any]]) -> Sequence[FlowInfo]
+                       params=None, **kwargs):
+        # type: (str, str, str, str, Optional[Dict[str, Any]], Any) -> Sequence[FlowInfo]
 
         # update default RCX parameters.
         rcx_params_actual = self.default_rcx_params.copy()
@@ -192,8 +192,22 @@ class ICV(VirtuosoChecker):
         with open_temp(prefix='rcxLog', dir=run_dir, delete=False) as logf:
             log_file = logf.name
         flow_list = []
-        cmd, log, env, cwd = self.setup_export_layout(lib_name, cell_name, lay_file, lay_view, None)
-        flow_list.append((cmd, log, env, cwd, _all_pass))
+        # Check if gds layout is provided
+        gds_layout_path = kwargs.pop('gds_layout_path', None)
+
+        # If not provided the gds layout, need to export layout
+        if not gds_layout_path:
+            cmd, log, env, cwd = self.setup_export_layout(lib_name, cell_name, lay_file, lay_view, None)
+            flow_list.append((cmd, log, env, cwd, _all_pass))
+        # If provided gds layout, do not export layout, just copy gds
+        else:
+            if not os.path.exists(gds_layout_path):
+                raise ValueError(f'gds_layout_path does not exist: {gds_layout_path}')
+            with open_temp(prefix='copy', dir=run_dir, delete=True) as f:
+                copy_log_file = f.name
+            copy_cmd = ['cp', gds_layout_path, os.path.abspath(lay_file)]
+            flow_list.append((copy_cmd, copy_log_file, None, None, _all_pass))
+
         cmd, log, env, cwd = self.setup_export_schematic(lib_name, cell_name, sch_file, sch_view, None)
         flow_list.append((cmd, log, env, cwd, _all_pass))
 
