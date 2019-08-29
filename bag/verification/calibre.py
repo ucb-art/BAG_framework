@@ -321,6 +321,13 @@ class Calibre(VirtuosoChecker):
         def rcx_passed(retcode, log_fname):
             if not os.path.isfile(result):
                 return None, log_fname
+
+            if self.rcx_mode == 'qrc':
+                cmd_output = read_file(log_fname)
+                test_str = ' terminated normally  *****'
+                if test_str not in cmd_output:
+                    return None, log_fname
+
             return result, log_fname
 
         flow_list.append((cmd, log_file, None, run_dir, rcx_passed))
