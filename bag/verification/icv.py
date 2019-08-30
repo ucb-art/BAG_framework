@@ -104,6 +104,7 @@ class ICV(VirtuosoChecker):
         self.rcx_runset = rcx_runset
         self.rcx_link_files = rcx_link_files
         self.rcx_mode = rcx_mode
+        self.netlist_format = 'netlist'
 
     def get_rcx_netlists(self, lib_name, cell_name):
         # type: (str, str) -> List[str]
@@ -122,10 +123,10 @@ class ICV(VirtuosoChecker):
             a list of generated extraction netlist file names.  The first index is the main netlist.
         """
         # PVS generate schematic cellviews directly.
-        if self.rcx_mode == 'starrc':
+        if self.rcx_mode == 'starrc' and self.netlist_format == 'netlist':
             return ['%s.spf' % cell_name]
         else:
-            pass
+            return []
 
     def setup_lvs_flow(self, lib_name, cell_name, sch_view='schematic', lay_view='layout',
                        params=None, **kwargs):
@@ -268,7 +269,10 @@ class ICV(VirtuosoChecker):
             test_str = 'DRC and Extraction Results: CLEAN'
 
             if test_str in cmd_output:
-                return results_file, log_fname
+                if self.netlist_format == 'netlist':
+                    return results_file, log_fname
+                else:
+                    return [], log_fname
             else:
                 return None, log_fname
 
@@ -321,4 +325,5 @@ class ICV(VirtuosoChecker):
                                                   lib_name=lib_name,
                                                   run_dir=run_dir,
                                               ))
+        self.netlist_format = starrc_params.get('netlist_format', 'netlist')
         return content, os.path.join(run_dir, output_name)
