@@ -1,0 +1,3 @@
+[submodule "bag_oa"]
+	path = bag_oa
+	url = git@github.com:ucb-art/bag_oa.git
