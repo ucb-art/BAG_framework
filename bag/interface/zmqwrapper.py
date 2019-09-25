@@ -115,7 +115,7 @@ class ZMQDealer(object):
         if events:
             data = self.socket.recv()
             z = bag.io.fix_string(zlib.decompress(data))
-            obj = yaml.load(z)
+            obj = yaml.load(z, Loader=yaml.FullLoader)
             self.log_obj('received data:', obj)
             return obj
         else:

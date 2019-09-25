@@ -20,7 +20,7 @@ from .design import ModuleDB, SchInstance
 from .layout.routing import RoutingGrid
 from .layout.template import TemplateDB
 from .layout.core import DummyTechInfo
-from .io import read_file, sim_data
+from .io import read_file, sim_data, read_yaml_env
 from .concurrent.core import batch_async_task
 
 if TYPE_CHECKING:
@@ -31,26 +31,6 @@ if TYPE_CHECKING:
 
     ModuleType = TypeVar('ModuleType', bound=Module)
     TemplateType = TypeVar('TemplateType', bound=TemplateBase)
-
-
-def _parse_yaml_file(fname):
-    # type: (str) -> Dict[str, Any]
-    """Parse YAML file with environment variable substitution.
-
-    Parameters
-    ----------
-    fname : str
-        yaml file name.
-
-    Returns
-    -------
-    table : Dict[str, Any]
-        the yaml file as a dictionary.
-    """
-    content = read_file(fname)
-    # substitute environment variables
-    content = string.Template(content).substitute(os.environ)
-    return yaml.load(content)
 
 
 def _get_config_file_abspath(fname):
@@ -433,8 +413,8 @@ def create_tech_info(bag_config_path=None):
             raise Exception('BAG_CONFIG_PATH not defined.')
         bag_config_path = os.environ['BAG_CONFIG_PATH']
 
-    bag_config = _parse_yaml_file(bag_config_path)
-    tech_params = _parse_yaml_file(bag_config['tech_config_path'])
+    bag_config = read_yaml_env(bag_config_path)
+    tech_params = read_yaml_env(bag_config['tech_config_path'])
     if 'class' in tech_params:
         tech_cls = _import_class_from_str(tech_params['class'])
         tech_info = tech_cls(tech_params)
@@ -475,7 +455,7 @@ class BagProject(object):
                 raise Exception('BAG_CONFIG_PATH not defined.')
             bag_config_path = os.environ['BAG_CONFIG_PATH']
 
-        self.bag_config = _parse_yaml_file(bag_config_path)
+        self.bag_config = read_yaml_env(bag_config_path)
         bag_tmp_dir = os.environ.get('BAG_TEMP_DIR', None)
 
         # get port files
@@ -604,7 +584,7 @@ class BagProject(object):
 
     def generate_cell(self,  # type: BagProject
                       specs,  # type: Dict[str, Any]
-                      temp_cls,  # type: Type[TemplateType]
+                      temp_cls=None,  # type: Optional[Type[TemplateType]]
                       gen_lay=True,  # type: bool
                       gen_sch=False,  # type: bool
                       run_lvs=False,  # type: bool
@@ -616,15 +596,16 @@ class BagProject(object):
                       save_cache=False,  # type: bool
                       **kwargs,
                       ):
-        # type: (...) -> Optional[pstats.Stats]
+        # type: (...) -> Optional[Union[pstats.Stats, Dict[str, Any]]]
         """Generate layout/schematic of a given cell from specification file.
 
         Parameters
         ----------
         specs : Dict[str, Any]
             the specification dictionary.
-        temp_cls : Type[TemplateType]
-            the TemplateBase subclass to instantiate.
+        temp_cls : Optional[Type[TemplateType]]
+            the TemplateBase subclass to instantiate
+            if not provided, it will be imported from lay_class entry in specs dictionary.
         gen_lay : bool
             True to generate layout.
         gen_sch : bool
@@ -648,26 +629,41 @@ class BagProject(object):
 
         Returns
         -------
-        stats : pstats.Stats
-            If profiling is enabled, the statistics object.
+        result: Optional[Union[pstats.Stats, Dict[str, Any]]]
+            If profiling is enabled, result will be the statistics object.
+            If the last thing done is layout or schematic, result will contain sch_params
+            If the last thing done is lvs, in case of failure result will
+            contain lvs log file in a dictionary, otherwise None
+            If the last thing done is rcx, in case of failure result will
+            contain rcx log file in a dictionary, otherwise None
         """
         prefix = kwargs.get('prefix', '')
         suffix = kwargs.get('suffix', '')
 
+        grid_specs = specs['routing_grid']
         impl_lib = specs['impl_lib']
         impl_cell = specs['impl_cell']
-        sch_lib = specs['sch_lib']
-        sch_cell = specs['sch_cell']
-        grid_specs = specs['routing_grid']
+        lay_str = specs.get('lay_class', '')
+        sch_lib = specs.get('sch_lib', '')
+        sch_cell = specs.get('sch_cell', '')
         params = specs['params']
         gds_lay_file = specs.get('gds_lay_file', '')
         cache_dir = specs.get('cache_dir', '')
+
+        if temp_cls is None and lay_str:
+            temp_cls = _import_class_from_str(lay_str)
+
+        has_lay = temp_cls is not None
+        if gen_lay and not has_lay:
+            raise ValueError('layout_class is not specified')
+
         if use_cache:
             db_cache_dir = specs.get('cache_dir', '')
         else:
             db_cache_dir = ''
 
-        if gen_lay or gen_sch:
+        result_pstat = None
+        if gen_lay:
             temp_db = self.make_template_db(impl_lib, grid_specs, use_cybagoa=use_cybagoa,
                                             gds_lay_file=gds_lay_file, cache_dir=db_cache_dir)
 
@@ -678,9 +674,7 @@ class BagProject(object):
                 profiler.runcall(temp_db.new_template, params=params, temp_cls=temp_cls,
                                  debug=False)
                 profiler.dump_stats(profile_fname)
-                result = pstats.Stats(profile_fname).strip_dirs()
-            else:
-                result = None
+                result_pstat = pstats.Stats(profile_fname).strip_dirs()
 
             temp = temp_db.new_template(params=params, temp_cls=temp_cls, debug=debug)
             print('computation done.')
@@ -692,40 +686,48 @@ class BagProject(object):
                 temp_db.save_to_cache(master_list, cache_dir, debug=debug)
                 print('saving done.')
 
-            if gen_lay:
-                print('creating layout...')
-                temp_db.batch_layout(self, temp_list, name_list, debug=debug)
-                print('layout done.')
-
-            if gen_sch:
-                dsn = self.create_design_module(lib_name=sch_lib, cell_name=sch_cell)
-                print('computing schematic...')
-                dsn.design(**temp.sch_params)
-                print('creating schematic...')
-                dsn.implement_design(impl_lib, top_cell_name=impl_cell, prefix=prefix,
-                                     suffix=suffix)
-                print('schematic done.')
+            print('creating layout...')
+            temp_db.batch_layout(self, temp_list, name_list, debug=debug)
+            print('layout done.')
+            sch_params = temp.sch_params
         else:
-            result = None
+            sch_params = params
 
+        if gen_sch:
+            dsn = self.create_design_module(lib_name=sch_lib, cell_name=sch_cell)
+            print('computing schematic...')
+            dsn.design(**sch_params)
+            print('creating schematic...')
+            dsn.implement_design(impl_lib, top_cell_name=impl_cell, prefix=prefix,
+                                 suffix=suffix)
+            print('schematic done.')
+
+        result = sch_params
         lvs_passed = False
-        if run_lvs or run_rcx:
+        if run_lvs:
             print('running lvs...')
-            lvs_passed, lvs_log = self.run_lvs(impl_lib, impl_cell)
+            lvs_passed, lvs_log = self.run_lvs(impl_lib, impl_cell, gds_lay_file=gds_lay_file)
             print('LVS log: %s' % lvs_log)
             if lvs_passed:
                 print('LVS passed!')
+                result = None
             else:
                 print('LVS failed...')
-        if lvs_passed and run_rcx:
+                result = dict(log=lvs_log)
+
+        if run_rcx and ((run_lvs and lvs_passed) or not run_lvs):
             print('running rcx...')
             rcx_passed, rcx_log = self.run_rcx(impl_lib, impl_cell)
             print('RCX log: %s' % rcx_log)
             if rcx_passed:
                 print('RCX passed!')
+                result = None
             else:
                 print('RCX failed...')
+                result = dict(log=rcx_log)
 
+        if result_pstat:
+            return result_pstat
         return result
 
     def create_library(self, lib_name, lib_path=''):
