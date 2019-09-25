@@ -3719,8 +3719,7 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
                       min_len=0,  # type: Union[float, int]
                       flip=False,  # type: bool
                       unit_mode=False,  # type: bool
-                      vss_only=False,  # type: bool
-                      vdd_only=False,  # type: bool
+                      sup_type='both',  # type: str
                       ):
         # type: (...) -> Tuple[List[WireArray], List[WireArray]]
         """Draw power fill on the given layer."""
@@ -3767,17 +3766,17 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
         n1 = (int(tr_top * 2) + 1 - htr0) // htr_pitch
         top_vdd = []  # type: List[WireArray]
         top_vss = []  # type: List[WireArray]
-        if vss_only and vdd_only:
-            raise ValueError('Only one of vdd_only and vss_only can be True.')
         for ncur in range(n0, n1 + 1):
             tr_idx = (htr0 + ncur * htr_pitch - 1) / 2
             tid = TrackID(layer_id, tr_idx, width=fill_width)
-            if vss_only:
+            if sup_type.lower() == 'vss':
                 cur_list = top_vss
-            elif vdd_only:
+            elif sup_type.lower() == 'vdd':
                 cur_list = top_vdd
-            else:
+            elif sup_type.lower() == 'both':
                 cur_list = top_vss if (ncur % 2 == 0) != flip else top_vdd
+            else:
+                raise ValueError('sup_type has to be "VDD" or "VSS" or "both"(default)')
             for tl, tu in self.open_interval_iter(tid, lower, upper, sp=space, sp_le=space_le,
                                                   min_len=min_len):
                 cur_list.append(WireArray(tid, tl, tu, res=res, unit_mode=True))
