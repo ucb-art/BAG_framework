@@ -2,9 +2,10 @@
 
 """This module defines various wrapper around ZMQ sockets."""
 
-import os
+import datetime
 import zlib
 import pprint
+from pathlib import Path
 
 import yaml
 import zmq
@@ -46,14 +47,15 @@ class ZMQDealer(object):
         self.poller.register(self.socket, zmq.POLLIN)
 
         if self._log_file is not None:
-            self._log_file = os.path.abspath(self._log_file)
+            self._log_file = Path(self._log_file).resolve()
             # If log file directory does not exists, create it
-            log_dir = os.path.dirname(self._log_file)
-            if not os.path.exists(log_dir):
-                os.makedirs(log_dir)
-            # clears any existing log
-            if os.path.exists(self._log_file):
-                os.remove(self._log_file)
+            log_dir: Path = self._log_file.parent
+            log_dir.mkdir(parents=True, exist_ok=True)
+            # time stamp the file
+            now = datetime.datetime.now()
+            time_stamp = now.strftime('%Y%m%d_%H%M%S')
+            ext = self._log_file.suffix
+            self._log_file = log_dir / f'{self._log_file.stem}_{time_stamp}.{ext}'
 
     def log_msg(self, msg):
         """Log the given message"""
