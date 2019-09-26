@@ -21,6 +21,7 @@ from .layout.template import TemplateDB
 from .layout.core import DummyTechInfo
 from .io import read_file, sim_data, read_yaml_env
 from .concurrent.core import batch_async_task
+from .simulation.core_v2 import TestbenchManager
 
 if TYPE_CHECKING:
     from .interface.simulator import SimAccess
@@ -742,11 +743,84 @@ class BagProject(object):
                       load_results: bool = False,
                       extract: bool = False,
                       run_sim: bool = True) -> Optional[Dict[str, Any]]:
+        """
+        Simulates a cell from a spec file, can be simulation directly or using TestbenchManager,
+        Currently only supports TestbenchManager in simulation.core_v2
+        Parameters
+        ----------
+        specs:
+            Dictionary of specifications
+            Some non-obvious conventions:
+            - if contains tbm_specs keyword, simulation is ran through testbench manager v2,
+            otherwise there should be a sim_params entry that specifies the simulation.
+            - Wrapper is assumed to be in the specs dictionary, if it is generated outside of
+            this function, gen_wrapper should be False.
+        gen_cell:
+            True to call generate_cell on specs
+        gen_wrapper:
+            True to generate Wrapper. Currently only one top-level wrapper is supported.
+        gen_tb:
+            True to generate test bench. If test bench is created, this flag can be set to False.
+        load_results:
+            True to skip simulation and load the results.
+        extract:
+            False to skip layout generation and only simulate schematic
+        run_sim:
+            True to run simulation. If the purpose of calling this function is just to generate
+            some part of simulation flow to debug, this flag can be set to False.
+        Returns
+        -------
+        results: Optional[Dict[str, Any]]
+            if run_sim/load_results = True, contains simulations results, otherwise it's None.
+        """
 
         impl_lib = specs['impl_lib']
         impl_cell = specs['impl_cell']
+        root_dir = Path(specs['root_dir'])
 
-        sim_params = specs.pop('sim_params', None)
+        if gen_cell and not load_results:
+            run_lvs_rcx = gen_lay = extract
+            print('generating cell ...')
+            self.generate_cell(specs,
+                               gen_lay=gen_lay,
+                               gen_sch=True,
+                               run_lvs=run_lvs_rcx,
+                               run_rcx=run_lvs_rcx,
+                               use_cybagoa=True)
+            print('cell generated.')
+
+        # if testbench manager v2 found use that instead of interpreting simulation directly
+        tbm_specs = specs.get('tbm_specs', None)
+        if tbm_specs:
+            tbm_cls_str = tbm_specs['tbm_cls']
+            tbm_cls = _import_class_from_str(tbm_cls_str)
+            tbm: TestbenchManager = tbm_cls(self, root_dir)
+            sim_view_list = tbm_specs.get('sim_view_list', [])
+            if not sim_view_list:
+                # TODO: view_name should come from extract flag
+                # something like:
+                # view_name = self.get_proper_view_name if extract else 'netlist'
+                view_name = tbm_specs.get('view_name', 'schematic')
+                sim_view_list.append((impl_cell, view_name))
+            sim_envs = tbm_specs['sim_envs']
+
+            # pop the wrapper from tbm_specs (default to None), if gen_wrapper is False make it None
+            wrapper_dict = tbm_specs.pop('wrapper', None)
+            if wrapper_dict and not gen_wrapper:
+                wrapper_dict = None
+            if load_results:
+                return tbm.load_results(impl_cell, tbm_specs)
+            if run_sim:
+                results = tbm.simulate(impl_lib=impl_lib,
+                                       impl_cell=impl_cell,
+                                       sim_view_list=sim_view_list,
+                                       env_list=sim_envs,
+                                       tb_dict=tbm_specs,
+                                       wrapper_dict=wrapper_dict,
+                                       gen_tb=gen_tb)
+                return results
+
+        sim_params = specs.get('sim_params', None)
         wrapper = sim_params.get('wrapper', None)
 
         has_wrapper = wrapper is not None
@@ -774,7 +848,6 @@ class BagProject(object):
             tb_suffix = f'{tb_cell}'
         tb_name = f'{impl_cell}_{tb_suffix}'
 
-        root_dir = Path(specs['root_dir'])
         tb_fname = root_dir / Path(tb_name, f'{tb_name}.hdf5')
 
         if load_results:
@@ -782,17 +855,6 @@ class BagProject(object):
             if tb_fname.exists():
                 return sim_data.load_sim_file(tb_fname)
             raise ValueError(f'simulation results does not exist in {str(tb_fname)}')
-
-        if gen_cell:
-            run_lvs_rcx = gen_lay = extract
-            print('generating cell ...')
-            self.generate_cell(specs,
-                               gen_lay=gen_lay,
-                               gen_sch=True,
-                               run_lvs=run_lvs_rcx,
-                               run_rcx=run_lvs_rcx,
-                               use_cybagoa=True)
-            print('cell generated.')
 
         if gen_wrapper and has_wrapper:
             print('generating wrapper ...')
