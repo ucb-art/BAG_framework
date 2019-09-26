@@ -6,6 +6,7 @@ import datetime
 import zlib
 import pprint
 from pathlib import Path
+import os
 
 import yaml
 import zmq
@@ -55,7 +56,7 @@ class ZMQDealer(object):
             now = datetime.datetime.now()
             time_stamp = now.strftime('%Y%m%d_%H%M%S')
             ext = self._log_file.suffix
-            self._log_file = log_dir / f'{self._log_file.stem}_{time_stamp}.{ext}'
+            self._log_file = str(log_dir / f'{self._log_file.stem}_{time_stamp}.{ext}')
 
     def log_msg(self, msg):
         """Log the given message"""
