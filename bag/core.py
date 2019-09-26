@@ -6,13 +6,12 @@
 from typing import TYPE_CHECKING, Dict, Any, Tuple, Optional, Union, Type, Sequence, TypeVar
 
 import os
-import string
 import importlib
 import cProfile
 import pstats
+from pathlib import Path
 
 # noinspection PyPackageRequirements
-import yaml
 
 from .interface import ZMQDealer
 from .interface.database import DbAccess
@@ -194,7 +193,10 @@ class Testbench(object):
             the parameter value will be rounded to this precision.
         """
         param_config = dict(type='single', value=val)
-        self.parameters[name] = self.sim.format_parameter_value(param_config, precision)
+        if isinstance(val, str):
+            self.parameters[name] = val
+        else:
+            self.parameters[name] = self.sim.format_parameter_value(param_config, precision)
 
     def set_env_parameter(self, name, val_list, precision=6):
         # type: (str, Sequence[float], int) -> None
@@ -663,7 +665,7 @@ class BagProject(object):
             db_cache_dir = ''
 
         result_pstat = None
-        if gen_lay:
+        if has_lay:
             temp_db = self.make_template_db(impl_lib, grid_specs, use_cybagoa=use_cybagoa,
                                             gds_lay_file=gds_lay_file, cache_dir=db_cache_dir)
 
@@ -686,9 +688,11 @@ class BagProject(object):
                 temp_db.save_to_cache(master_list, cache_dir, debug=debug)
                 print('saving done.')
 
-            print('creating layout...')
-            temp_db.batch_layout(self, temp_list, name_list, debug=debug)
-            print('layout done.')
+            if gen_lay:
+                print('creating layout...')
+                temp_db.batch_layout(self, temp_list, name_list, debug=debug)
+                print('layout done.')
+
             sch_params = temp.sch_params
         else:
             sch_params = params
@@ -710,7 +714,7 @@ class BagProject(object):
             print('LVS log: %s' % lvs_log)
             if lvs_passed:
                 print('LVS passed!')
-                result = None
+                result = dict(log='')
             else:
                 print('LVS failed...')
                 result = dict(log=lvs_log)
@@ -721,7 +725,7 @@ class BagProject(object):
             print('RCX log: %s' % rcx_log)
             if rcx_passed:
                 print('RCX passed!')
-                result = None
+                result = dict(log='')
             else:
                 print('RCX failed...')
                 result = dict(log=rcx_log)
@@ -729,6 +733,121 @@ class BagProject(object):
         if result_pstat:
             return result_pstat
         return result
+
+    def simulate_cell(self,
+                      specs: Dict[str, Any],
+                      gen_cell: bool = True,
+                      gen_wrapper: bool = True,
+                      gen_tb: bool = True,
+                      load_results: bool = False,
+                      extract: bool = False,
+                      run_sim: bool = True) -> Optional[Dict[str, Any]]:
+
+        impl_lib = specs['impl_lib']
+        impl_cell = specs['impl_cell']
+
+        sim_params = specs.pop('sim_params', None)
+        wrapper = sim_params.get('wrapper', None)
+
+        has_wrapper = wrapper is not None
+        if gen_wrapper and not has_wrapper:
+            raise ValueError('must provide a wrapper in sim_params')
+
+        wrapped_cell = ''
+        if has_wrapper:
+            wrapper_lib = wrapper['wrapper_lib']
+            wrapper_cell = wrapper['wrapper_cell']
+            wrapper_params = wrapper.get('params', {})
+            wrapper_suffix = wrapper.get('wrapper_suffix', '')
+            if not wrapper_suffix:
+                wrapper_suffix = f'{wrapper_cell}'
+            wrapped_cell = f'{impl_cell}_{wrapper_suffix}'
+
+        if gen_wrapper and not gen_tb:
+            raise ValueError('generated a new wrapper, therefore gen_tb should also be true')
+
+        tb_lib = sim_params['tb_lib']
+        tb_cell = sim_params['tb_cell']
+        tb_params = sim_params.get('tb_params', {})
+        tb_suffix = sim_params.get('tb_suffix', '')
+        if not tb_suffix:
+            tb_suffix = f'{tb_cell}'
+        tb_name = f'{impl_cell}_{tb_suffix}'
+
+        root_dir = Path(specs['root_dir'])
+        tb_fname = root_dir / Path(tb_name, f'{tb_name}.hdf5')
+
+        if load_results:
+            print("loading results ...")
+            if tb_fname.exists():
+                return sim_data.load_sim_file(tb_fname)
+            raise ValueError(f'simulation results does not exist in {str(tb_fname)}')
+
+        if gen_cell:
+            run_lvs_rcx = gen_lay = extract
+            print('generating cell ...')
+            self.generate_cell(specs,
+                               gen_lay=gen_lay,
+                               gen_sch=True,
+                               run_lvs=run_lvs_rcx,
+                               run_rcx=run_lvs_rcx,
+                               use_cybagoa=True)
+            print('cell generated.')
+
+        if gen_wrapper and has_wrapper:
+            print('generating wrapper ...')
+            # noinspection PyUnboundLocalVariable
+            master = self.create_design_module(lib_name=wrapper_lib, cell_name=wrapper_cell)
+            # noinspection PyUnboundLocalVariable
+            master.design(dut_lib=impl_lib, dut_cell=impl_cell, **wrapper_params)
+            master.implement_design(impl_lib, wrapped_cell)
+            print('wrapper generated.')
+
+        if gen_tb:
+            print('generating testbench ...')
+            tb_master = self.create_design_module(tb_lib, tb_cell)
+            dut_cell = wrapped_cell if has_wrapper else impl_cell
+            tb_master.design(dut_lib=impl_lib, dut_cell=dut_cell, **tb_params)
+            tb_master.implement_design(impl_lib, tb_name)
+            print('testbench generated.')
+
+        if run_sim:
+            print('seting up ADEXL ...')
+            # TODO: find the proper way of getting proper view_name based on the extract flag only
+            # something like:
+            # view_name = self.get_proper_view_name if extract else 'netlist'
+
+            view_name = sim_params.get('view_name', 'netlist')
+            sim_envs = sim_params['sim_envs']
+            sim_swp_params = sim_params.get('sim_swp_params', {})
+            sim_vars = sim_params.get('sim_vars', {})
+            sim_outputs = sim_params.get('sim_outputs', {})
+
+            tb = self.configure_testbench(impl_lib, tb_name)
+
+            for key, val in sim_vars.items():
+                tb.set_parameter(key, val)
+
+            for key, val in sim_swp_params.items():
+                tb.set_sweep_parameter(key, values=val)
+
+            for key, val in sim_outputs.items():
+                tb.add_output(key, val)
+
+            tb.set_simulation_view(impl_lib, tb_cell, view_name)
+            tb.set_simulation_environments(sim_envs)
+            tb.update_testbench()
+            print('setup completed.')
+            print('running simulation ...')
+            tb.run_simulation()
+            print('simulation done.')
+            print('loading results ...')
+            results = sim_data.load_sim_results(tb.save_dir)
+            print('results loaded.')
+            print('saving results into hdf5')
+            sim_data.save_sim_results(results, tb_fname)
+            print('results saved.')
+            return results
 
     def create_library(self, lib_name, lib_path=''):
         # type: (str, str) -> None

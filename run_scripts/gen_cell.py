@@ -5,33 +5,10 @@ from pathlib import Path
 from bag.io.file import Pickle, Yaml
 from bag.core import BagProject
 
-import pprint
-
 io_cls_dict = {
     'pickle': Pickle,
     'yaml': Yaml,
 }
-
-
-def run_main(prj: BagProject, args: Namespace):
-    specs_fname = Path(args.specs_fname)
-    io_cls = io_cls_dict[args.format]
-    specs = io_cls.load(str(specs_fname))
-
-    results = prj.generate_cell(specs=specs,
-                                gen_lay=args.gen_lay,
-                                gen_sch=args.gen_sch,
-                                run_lvs=args.lvs,
-                                run_rcx=args.rcx,
-                                use_cybagoa=True,
-                                use_cache=args.use_cache,
-                                save_cache=args.save_cache,
-                                prefix=args.prefix,
-                                suffix=args.suffix)
-
-    if results is not None and args.dump:
-        out_tmp_file = Path(args.dump)
-        io_cls.save(results, out_tmp_file)
 
 
 def parse_args() -> Namespace:
@@ -62,6 +39,27 @@ def parse_args() -> Namespace:
                              'file according to the format specified')
     args = parser.parse_args()
     return args
+
+
+def run_main(prj: BagProject, args: Namespace):
+    specs_fname = Path(args.specs_fname)
+    io_cls = io_cls_dict[args.format]
+    specs = io_cls.load(str(specs_fname))
+
+    results = prj.generate_cell(specs=specs,
+                                gen_lay=args.gen_lay,
+                                gen_sch=args.gen_sch,
+                                run_lvs=args.lvs,
+                                run_rcx=args.rcx,
+                                use_cybagoa=True,
+                                use_cache=args.use_cache,
+                                save_cache=args.save_cache,
+                                prefix=args.prefix,
+                                suffix=args.suffix)
+
+    if results is not None and args.dump:
+        out_tmp_file = Path(args.dump)
+        io_cls.save(results, out_tmp_file)
 
 
 if __name__ == '__main__':
