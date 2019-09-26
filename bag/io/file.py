@@ -44,7 +44,7 @@ class Yaml:
     @staticmethod
     def load(file, **kwargs):
         with open(file, 'r') as f:
-            return yaml.load(f, Loader=yaml.FullLoader)
+            return yaml.load(f, Loader=yaml.Loader)
 
 
 def open_file(fname, mode):
@@ -122,7 +122,7 @@ def read_yaml_env(fname):
     content = read_file(fname)
     # substitute environment variables
     content = string.Template(content).substitute(os.environ)
-    return yaml.load(content, Loader=yaml.FullLoader)
+    return yaml.load(content, Loader=yaml.Loader)
 
 
 def read_yaml(fname):
@@ -139,7 +139,7 @@ def read_yaml(fname):
         the object returned by YAML.
     """
     with open_file(fname, 'r') as f:
-        content = yaml.load(f, Loader=yaml.FullLoader)
+        content = yaml.load(f, Loader=yaml.Loader)
 
     return content
 
