@@ -6,6 +6,7 @@
 from typing import TYPE_CHECKING, Optional, List, Tuple, Dict, Any, Sequence
 
 import os
+import subprocess
 
 from .virtuoso import VirtuosoChecker
 from ..io import read_file, open_temp
@@ -51,10 +52,11 @@ def lvs_passed(retcode, log_file):
     if not os.path.isfile(log_file):
         return False, ''
 
-    cmd_output = read_file(log_file)
     test_str = 'Final comparison result:PASS'
+    LogCheck = subprocess.Popen(['grep', '-i', test_str, log_file], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = LogCheck.communicate()
 
-    return test_str in cmd_output, log_file
+    return stdout.decode() != '', log_file
 
 
 class ICV(VirtuosoChecker):
@@ -265,10 +267,12 @@ class ICV(VirtuosoChecker):
             if not os.path.isfile(log_fname):
                 return None, ''
 
-            cmd_output = read_file(log_fname)
             test_str = 'DRC and Extraction Results: CLEAN'
+            LogCheck = subprocess.Popen(['grep', '-i', test_str, log_fname], stdout=subprocess.PIPE,
+                                        stderr=subprocess.STDOUT)
+            stdout, stderr = LogCheck.communicate()
 
-            if test_str in cmd_output:
+            if stdout.decode() != '':
                 if self.netlist_format == 'netlist':
                     return results_file, log_fname
                 else:

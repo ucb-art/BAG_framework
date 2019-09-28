@@ -6,6 +6,7 @@
 from typing import TYPE_CHECKING, Optional, List, Tuple, Dict, Any, Sequence
 
 import os
+import subprocess
 
 from .virtuoso import VirtuosoChecker
 from ..io import read_file, open_temp, readlines_iter
@@ -41,9 +42,11 @@ def lvs_passed(retcode, log_file):
     if not os.path.isfile(log_file):
         return False, ''
 
-    cmd_output = read_file(log_file)
-    test_str = 'LVS completed. CORRECT. See report file:'
-    return test_str in cmd_output, log_file
+    test_str = 'LVS completed. CORRECT.'
+    LogCheck = subprocess.Popen(['grep', '-i', test_str, log_file], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = LogCheck.communicate()
+
+    return stdout.decode() != '', log_file
 
 
 # noinspection PyUnusedLocal
@@ -68,9 +71,11 @@ def query_passed(retcode, log_file):
     if not os.path.isfile(log_file):
         return False, ''
 
-    cmd_output = read_file(log_file)
     test_str = 'OK: Terminating.'
-    return test_str in cmd_output, log_file
+    LogCheck = subprocess.Popen(['grep', '-i', test_str, log_file], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = LogCheck.communicate()
+
+    return stdout.decode() != '', log_file
 
 
 class Calibre(VirtuosoChecker):
@@ -323,9 +328,12 @@ class Calibre(VirtuosoChecker):
                 return None, log_fname
 
             if self.rcx_mode == 'qrc':
-                cmd_output = read_file(log_fname)
                 test_str = ' terminated normally  *****'
-                if test_str not in cmd_output:
+                LogCheck = subprocess.Popen(['grep', '-i', test_str, log_fname], stdout=subprocess.PIPE,
+                                            stderr=subprocess.STDOUT)
+                stdout, stderr = LogCheck.communicate()
+
+                if stdout.decode() == '':
                     return None, log_fname
 
             return result, log_fname
