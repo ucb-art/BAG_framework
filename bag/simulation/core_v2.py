@@ -1,24 +1,20 @@
 from __future__ import annotations
 from typing import (
-    TYPE_CHECKING, Optional, Dict, Any, Tuple, List, Iterable, Sequence, Type, cast
+    TYPE_CHECKING, Optional, Dict, Any, Type, cast
 )
 
 import abc
-import importlib
 from pathlib import Path
 
-from ..math import float_to_si_string
-from ..io.file import Yaml
 from ..io.sim_data import load_sim_results, save_sim_results, load_sim_file
-from ..util.immutable import ImmutableList
-from ..layout.template import TemplateDB, TemplateBase
-from ..design.module import Module
 from ..concurrent.core import batch_async_task
-from ..interface.simulator import SimAccess
+from ..core import _import_class_from_str
+from ..util.immutable import to_immutable
 
 if TYPE_CHECKING:
     from ..core import BagProject
     from ..core import Testbench
+    from bag.util.immutable import ImmutableType
 
 
 class TestbenchManager(abc.ABC):
@@ -48,6 +44,10 @@ class TestbenchManager(abc.ABC):
     def specs(self):
         return self._specs
 
+    @property
+    def sim_vars(self):
+        return self.specs.get('sim_vars', {})
+
     # noinspection PyMethodMayBeStatic
     def pre_setup(self, tb_params: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Override to perform any operations prior to calling the setup() function.
@@ -66,7 +66,7 @@ class TestbenchManager(abc.ABC):
         return tb_params
 
     def setup(self, impl_lib, impl_cell, sim_view_list, env_list,
-              tb_dict, wrapper_dict=None, gen_tb=True) -> Testbench:
+              tb_dict, wrapper_dict=None, gen_tb=True, gen_wrapper=True) -> Testbench:
         tb_dict = self.pre_setup(tb_dict)
         self._specs = tb_dict
         prj = self._prj
@@ -92,8 +92,9 @@ class TestbenchManager(abc.ABC):
             tb_suffix = f'{tb_cell}'
         tb_name = f'{impl_cell}_{tb_suffix}'
 
-        if has_wrapper:
-            print('generating wrapper ...')
+        if has_wrapper and gen_wrapper:
+            # noinspection PyUnboundLocalVariable
+            print(f'Generating wrapper {impl_lib}_{wrapped_cell}')
             # noinspection PyUnboundLocalVariable
             master = prj.create_design_module(lib_name=wrapper_lib, cell_name=wrapper_cell)
             # noinspection PyUnboundLocalVariable
@@ -102,10 +103,10 @@ class TestbenchManager(abc.ABC):
             print('wrapper generated.')
 
         if not gen_tb:
-            print(f'loading testbench {tb_name}')
+            print(f'loading testbench {impl_lib}_{tb_name}')
             tb = prj.load_testbench(impl_lib, tb_name)
         else:
-            print(f'Creating testbench {tb_name}')
+            print(f'Generating testbench {impl_cell}_{tb_name}')
             tb_master = prj.create_design_module(tb_lib, tb_cell)
             dut_cell = wrapped_cell if has_wrapper else impl_cell
             tb_master.design(dut_lib=impl_lib, dut_cell=dut_cell, **tb_params)
@@ -137,290 +138,159 @@ class TestbenchManager(abc.ABC):
         return tb
 
     async def setup_and_simulate(self, impl_lib, impl_cell, sim_view_list, env_list, tb_dict,
-                                 wrapper_dict, gen_tb):
+                                 wrapper_dict, gen_tb, gen_wrapper, run_sim):
         tb: Testbench = self.setup(impl_lib=impl_lib, impl_cell=impl_cell,
                                    sim_view_list=sim_view_list, env_list=env_list,
-                                   tb_dict=tb_dict, wrapper_dict=wrapper_dict, gen_tb=gen_tb)
-        print('Simulating %s' % tb.cell)
-        save_dir = await tb.async_run_simulation()
-        print('Finished simulating %s' % tb.cell)
-        results = load_sim_results(save_dir)
-        save_sim_results(results, str(self.work_dir / f'{tb.cell}_data.hdf5'))
-        return results
+                                   tb_dict=tb_dict, wrapper_dict=wrapper_dict, gen_tb=gen_tb,
+                                   gen_wrapper=gen_wrapper)
+        if run_sim:
+            print('Simulating %s' % tb.cell)
+            save_dir = await tb.async_run_simulation()
+            print('Finished simulating %s' % tb.cell)
+            results = load_sim_results(save_dir)
+            results_dir = str(self.work_dir / impl_cell / f'{tb.cell}_data.hdf5')
+            save_sim_results(results, results_dir)
+            return results
 
     def simulate(self, impl_lib, impl_cell, sim_view_list, env_list, tb_dict,
-                 wrapper_dict=None, gen_tb=True):
+                 wrapper_dict=None, gen_tb=True, gen_wrapper=True, run_sim=True):
         coro = self.setup_and_simulate(impl_lib=impl_lib, impl_cell=impl_cell,
                                        sim_view_list=sim_view_list, env_list=env_list,
-                                       tb_dict=tb_dict, wrapper_dict=wrapper_dict, gen_tb=gen_tb)
-        results = batch_async_task([coro])
-        for res in results:
-            if isinstance(res, Exception):
-                raise res
+                                       tb_dict=tb_dict, wrapper_dict=wrapper_dict, gen_tb=gen_tb,
+                                       gen_wrapper=gen_wrapper, run_sim=run_sim)
+        results = batch_async_task([coro])[0]
         return results
 
     def load_results(self, impl_cell, tb_dict):
+        self._specs = tb_dict
         tb_cell = tb_dict['tb_cell']
         tb_suffix = tb_dict.get('tb_suffix', '')
         if not tb_suffix:
             tb_suffix = f'{tb_cell}'
         tb_name = f'{impl_cell}_{tb_suffix}'
-        tb_fname = self.work_dir / f'{tb_name}_data.hdf5'
+        tb_fname = self.work_dir / impl_cell / f'{tb_name}_data.hdf5'
         if tb_fname.exists():
             return load_sim_file(str(tb_fname))
         raise ValueError(f'simulation results does not exist in {str(tb_fname)}')
 
 
 class MeasurementManager(abc.ABC):
-    """A class that handles circuit performance measurement.
 
-    This class handles all the steps needed to measure a specific performance
-    metric of the device-under-test.  This may involve creating and simulating
-    multiple different testbenches, where configuration of successive testbenches
-    depends on previous simulation results. This class reduces the potentially
-    complex measurement tasks into a few simple abstract methods that designers
-    simply have to implement.
+    def __init__(self, prj: BagProject, work_dir: Path, mm_specs: Dict[str, Any]) -> None:
+        self._prj = prj
+        self._work_dir = work_dir
+        self._specs = mm_specs
 
-    Parameters
-    ----------
-    sim : SimAccess
-        the simulator interface object.
-    dir_path : Path
-        Simulation data directory.
-    meas_name : str
-        measurement setup name.
-    impl_lib : str
-        implementation library name.
-    specs : Dict[str, Any]
-        the measurement specification dictionary.
-    wrapper_lookup : Dict[str, str]
-        the DUT wrapper cell name lookup table.
-    sim_view_list : Sequence[Tuple[str, str]]
-        simulation view list
-    env_list : Sequence[str]
-        simulation environments list.
-    precision : int
-        numeric precision in simulation netlist generation.
-    """
+        self.tb_managers: Dict[str, TestbenchManager] = {}
+        self.tb_params: Dict[str, Dict[str, Any]] = {}
+        self._wrapper_lookup: Dict[ImmutableType, Dict[str, Any]] = {}
 
-    def __init__(self, sim: SimAccess, dir_path: Path, meas_name: str, impl_lib: str,
-                 specs: Dict[str, Any], wrapper_lookup: Dict[str, str],
-                 sim_view_list: Sequence[Tuple[str, str]], env_list: Sequence[str],
-                 precision: int = 6) -> None:
-        self._sim = sim
-        self._dir_path = dir_path.resolve()
-        self._meas_name = meas_name
-        self._impl_lib = impl_lib
-        self._specs = specs
-        self._wrapper_lookup = wrapper_lookup
-        self._sim_view_list = sim_view_list
-        self._env_list = env_list
-        self._precision = precision
+        # fill up tb_managers and tb_params
+        self._prepare_tb_specs()
 
-        self._dir_path.mkdir(parents=True, exist_ok=True)
-
-    @abc.abstractmethod
-    def get_initial_state(self) -> str:
-        """Returns the initial FSM state."""
-        return ''
-
-    def get_testbench_info(self, state: str, prev_output: Optional[Dict[str, Any]]
-                           ) -> Tuple[str, str, Dict[str, Any], Optional[Dict[str, Any]]]:
-        """Get information about the next testbench.
-
-        Override this method to perform more complex operations.
-
-        Parameters
-        ----------
-        state : str
-            the current FSM state.
-        prev_output : Optional[Dict[str, Any]]
-            the previous post-processing output.
-
-        Returns
-        -------
-        tb_name : str
-            cell name of the next testbench.  Should incorporate self.meas_name to avoid
-            collision with testbench for other designs.
-        tb_type : str
-            the next testbench type.
-        tb_specs : Dict[str, Any]
-            the testbench specification dictionary.
-        tb_params : Optional[Dict[str, Any]]
-            the next testbench schematic parameters.  If we are reusing an existing
-            testbench, this should be None.
-        """
-        tb_type = state
-        tb_name = self.get_testbench_name(tb_type)
-        tb_specs = self.get_testbench_specs(tb_type).copy()
-        tb_params = self.get_default_tb_sch_params(tb_type)
-
-        return tb_name, tb_type, tb_specs, tb_params
-
-    @abc.abstractmethod
-    def process_output(self, state: str, data: SimData, tb_manager: TestbenchManager
-                       ) -> Tuple[bool, str, Dict[str, Any]]:
-        """Process simulation output data.
-
-        Parameters
-        ----------
-        state : str
-            the current FSM state
-        data : SimData
-            simulation data dictionary.
-        tb_manager : TestbenchManager
-            the testbench manager object.
-
-        Returns
-        -------
-        done : bool
-            True if this measurement is finished.
-        next_state : str
-            the next FSM state.
-        output : Dict[str, Any]
-            a dictionary containing post-processed data.
-        """
-        return False, '', {}
+        self.gen_wrapper: bool = True
+        self.gen_tb: bool = True
+        self.run_sims: bool = True
 
     @property
-    def specs(self) -> Dict[str, Any]:
+    def specs(self):
         return self._specs
 
     @property
-    def data_dir(self) -> Path:
-        return self._dir_path
+    def work_dir(self):
+        return self._work_dir
 
-    @property
-    def sim_envs(self) -> Sequence[str]:
-        return self._env_list
+    def _prepare_tb_specs(self) -> None:
+        # creates testbench manager objects and fills up the mappings
+        testbenches = self.specs['testbenches']
+        for tb_name, tb_dict in testbenches.items():
+            tbm_cls = _import_class_from_str(tb_dict['tbm_cls'])
+            tbm_cls = cast(Type[TestbenchManager], tbm_cls)
+            self.tb_params[tb_name] = tb_dict
+            self.tb_managers[tb_name] = tbm_cls(self._prj, self._work_dir)
 
-    def get_testbench_name(self, tb_type: str) -> str:
-        """Returns a default testbench name given testbench type."""
-        return f'{self._meas_name}_TB_{tb_type}'
+    def _prepare_tbm_dict(self, impl_cell, tbm_dict, extract):
+        # adds sim_view_list and env_list to tbm_dict if they don't exist, so that after this
+        # function there must be sim_view_list and sim_envs entries in tbm_dict
+        if 'sim_view_list' not in tbm_dict:
+            try:
+                view_name = self.specs['view_name']
+                tbm_dict['sim_view_list'] = [(impl_cell, view_name)]
+            except KeyError:
+                default_sim_view_list = self.specs.get('sim_view_list', [])
+                if not default_sim_view_list:
+                    view_name = self.specs.get('view_name', 'netlist' if extract else 'schematic')
+                    default_sim_view_list.append((impl_cell, view_name))
+                tbm_dict['sim_view_list'] = default_sim_view_list
+        if 'sim_envs' not in tbm_dict:
+            try:
+                default_env_list = self.specs['sim_envs']
+                tbm_dict['sim_envs'] = default_env_list
+            except KeyError:
+                raise ValueError('Did you forget to specify simulation environment?')
 
-    async def async_measure_performance(self, sch_db: Optional[ModuleDB], dut_cvi_list: List[Any],
-                                        dut_netlist: Optional[Path], load_from_file: bool = False,
-                                        gen_sch: bool = True) -> Dict[str, Any]:
-        """A coroutine that performs measurement.
+    def _wrapper_exists(self, wrapper: ImmutableType) -> bool:
+        # checks if the wrapper (around impl_lib, impl_cell) has been created to avoid recreation
+        return wrapper in self._wrapper_lookup
 
-        The measurement is done like a FSM.  On each iteration, depending on the current
-        state, it creates a new testbench (or reuse an existing one) and simulate it.
-        It then post-process the simulation data to determine the next FSM state, or
-        if the measurement is done.
+    def run_tb(self, impl_lib, impl_cell, tb_name, tbm_dict=None, extract=True,
+               load_results=False):
+        # if tb_dict is None the default tb_dict is used
+        if tbm_dict is None:
+            tbm_dict = self.tb_params[tb_name]
+        tb_obj: TestbenchManager = self.tb_managers[tb_name]
+
+        if load_results:
+            return tb_obj.load_results(impl_cell, tbm_dict)
+
+        wrapper = tbm_dict['wrapper']
+        wrapper_key = to_immutable(wrapper)
+        gen_wrapper = not self._wrapper_exists(wrapper_key)
+        gen_wrapper = self.gen_wrapper and gen_wrapper
+
+        # inherit default sim_envs and sim_view_list from self.specs
+        self._prepare_tbm_dict(impl_cell, tbm_dict, extract)
+
+        sim_view_list = tbm_dict['sim_view_list']
+        sim_envs = tbm_dict['sim_envs']
+
+        results = tb_obj.simulate(impl_lib, impl_cell, sim_view_list=sim_view_list,
+                                  env_list=sim_envs, tb_dict=tbm_dict, gen_tb=self.gen_tb,
+                                  gen_wrapper=gen_wrapper, run_sim=self.run_sims)
+
+        if not gen_wrapper:
+            self._wrapper_lookup[wrapper_key] = wrapper
+
+        return results
+
+    @abc.abstractmethod
+    def run_flow(self, impl_lib: str, impl_cell: str, load_results: bool = False) -> Any:
+        """
+        Defines the FSM in code rather than passing state indicators through a dictionary
+        use self.run_tb to orchestrate test benches and modify their parameters if necessary
+
+        Don't call this method directly, call measure instead
 
         Parameters
         ----------
-        sch_db : Optional[ModuleDB]
-            the schematic database.
-
-            if load_from_file is True, this can be None. as it will not be used unless necessary.
-        dut_cvi_list : List[str]
-            cv_info for DUT cell netlist
-
-            if load_from_file is True, this will not be used unless necessary.
-        dut_netlist : Optional[Path]
-            netlist of DUT cell
-
-            if load_from_file is True, this will not be used unless necessary.
-        load_from_file : bool
-            If True, then load existing simulation data instead of running actual simulation.
-        gen_sch : bool
-            True to create testbench schematics.
+        impl_lib:
+            DUT implementation library
+        impl_cell
+            DUT implementation cell
+        load_results:
+            True to load results, this is used when debugging post processing functions
 
         Returns
         -------
-        output : Dict[str, Any]
-            the last dictionary returned by process_output().
+            Any post processed result, even returning nothing is also an option
         """
-        cur_state = self.get_initial_state()
-        prev_output = None
-        done = False
 
-        while not done:
-            # create and setup testbench
-            tb_name, tb_type, tb_specs, tb_sch_params = self.get_testbench_info(cur_state,
-                                                                                prev_output)
+        raise NotImplementedError
 
-            tb_package = tb_specs['tb_package']
-            tb_cls_name = tb_specs['tb_class']
-            tb_module = importlib.import_module(tb_package)
-            tb_cls = getattr(tb_module, tb_cls_name)
-            work_dir = self._dir_path / cur_state
-            tb_manager: TestbenchManager = tb_cls(self._sim, work_dir, tb_name, self._impl_lib,
-                                                  tb_specs, self._sim_view_list, self._env_list,
-                                                  precision=self._precision)
+    def measure(self, impl_lib: str, impl_cell: str, load_results: bool = False,
+                gen_wrapper: bool = True, gen_tb: bool = True, run_sims: bool = True) -> Any:
+        self.gen_wrapper = gen_wrapper
+        self.gen_tb = gen_tb
+        self.run_sims = run_sims
 
-            if load_from_file:
-                print(f'Measurement {self._meas_name} in state {cur_state}, '
-                      'load sim data from file.')
-                try:
-                    cur_results = tb_manager.load_sim_data()
-                except FileNotFoundError:
-                    print('Cannot find data file, simulating...')
-                    if sch_db is None or not dut_cvi_list or dut_netlist is None:
-                        raise ValueError('Cannot create testbench as DUT netlist not given.')
-
-                    tb_manager.setup(sch_db, tb_sch_params, dut_cv_info_list=dut_cvi_list,
-                                     dut_netlist=dut_netlist, gen_sch=gen_sch)
-                    await tb_manager.async_simulate()
-                    cur_results = tb_manager.load_sim_data()
-            else:
-                tb_manager.setup(sch_db, tb_sch_params, dut_cv_info_list=dut_cvi_list,
-                                 dut_netlist=dut_netlist, gen_sch=gen_sch)
-                await tb_manager.async_simulate()
-                cur_results = tb_manager.load_sim_data()
-
-            # process and save simulation data
-            print(f'Measurement {self._meas_name} in state {cur_state}, '
-                  f'processing data from {tb_type}')
-            done, next_state, prev_output = self.process_output(cur_state, cur_results, tb_manager)
-            write_yaml(self._dir_path / f'{cur_state}.yaml', prev_output)
-
-            cur_state = next_state
-
-        write_yaml(self._dir_path / f'{self._meas_name}.yaml', prev_output)
-        return prev_output
-
-    def measure_performance(self, sch_db: Optional[ModuleDB], dut_cvi_list: List[Any],
-                            dut_netlist: Optional[Path], load_from_file: bool = False,
-                            gen_sch: bool = True) -> Dict[str, Any]:
-        coro = self.async_measure_performance(sch_db, dut_cvi_list, dut_netlist,
-                                              load_from_file=load_from_file,
-                                              gen_sch=gen_sch)
-        return batch_async_task([coro])[0]
-
-    def get_state_output(self, state: str) -> Dict[str, Any]:
-        """Get the post-processed output of the given state."""
-        return read_yaml(self._dir_path / f'{state}.yaml')
-
-    def get_testbench_specs(self, tb_type: str) -> Dict[str, Any]:
-        """Helper method to get testbench specifications."""
-        return self._specs['testbenches'][tb_type]
-
-    def get_default_tb_sch_params(self, tb_type: str) -> Dict[str, Any]:
-        """Helper method to return a default testbench schematic parameters dictionary.
-
-        This method loads default values from specification file, the fill in dut_lib
-        and dut_cell for you.
-
-        Parameters
-        ----------
-        tb_type : str
-            the testbench type.
-
-        Returns
-        -------
-        sch_params : Dict[str, Any]
-            the default schematic parameters dictionary.
-        """
-        tb_specs = self.get_testbench_specs(tb_type)
-        wrapper_type = tb_specs.get('wrapper_type', '')
-
-        if 'sch_params' in tb_specs:
-            tb_params = tb_specs['sch_params'].copy()
-        else:
-            tb_params = {}
-
-        tb_params['dut_lib'] = self._impl_lib
-        tb_params['dut_cell'] = self._wrapper_lookup[wrapper_type]
-        return tb_params
+        return self.run_flow(impl_lib, impl_cell, load_results)

@@ -21,13 +21,13 @@ from .layout.template import TemplateDB
 from .layout.core import DummyTechInfo
 from .io import read_file, sim_data, read_yaml_env
 from .concurrent.core import batch_async_task
-from .simulation.core_v2 import TestbenchManager
 
 if TYPE_CHECKING:
     from .interface.simulator import SimAccess
     from .layout.template import TemplateBase
     from .layout.core import TechInfo
     from .design.module import Module
+    from .simulation.core_v2 import TestbenchManager, MeasurementManager
 
     ModuleType = TypeVar('ModuleType', bound=Module)
     TemplateType = TypeVar('TemplateType', bound=TemplateBase)
@@ -744,8 +744,17 @@ class BagProject(object):
                       extract: bool = False,
                       run_sim: bool = True) -> Optional[Dict[str, Any]]:
         """
-        Simulates a cell from a spec file, can be simulation directly or using TestbenchManager,
-        Currently only supports TestbenchManager in simulation.core_v2
+        Runs a minimum executable parts of the Testbench Manager flow selectively according to
+        a spec dictionary.
+
+        For example you can set the flags to generate a new cell, but since wrapper and test bench
+        exist, maybe you want to skip those, and run the simulation in the end. Maybe you
+        already created the cell all the way up to test bench level, and now you only need to
+        run simulation.
+
+        This function only works with Testbench Managers written in format of
+        simulation.core_v2.TestbenchManager
+
         Parameters
         ----------
         specs:
@@ -779,13 +788,12 @@ class BagProject(object):
         root_dir = Path(specs['root_dir'])
 
         if gen_cell and not load_results:
-            run_lvs_rcx = gen_lay = extract
             print('generating cell ...')
             self.generate_cell(specs,
-                               gen_lay=gen_lay,
+                               gen_lay=extract,
                                gen_sch=True,
-                               run_lvs=run_lvs_rcx,
-                               run_rcx=run_lvs_rcx,
+                               run_lvs=extract,
+                               run_rcx=extract,
                                use_cybagoa=True)
             print('cell generated.')
 
@@ -797,28 +805,23 @@ class BagProject(object):
             tbm: TestbenchManager = tbm_cls(self, root_dir)
             sim_view_list = tbm_specs.get('sim_view_list', [])
             if not sim_view_list:
-                # TODO: view_name should come from extract flag
-                # something like:
-                # view_name = self.get_proper_view_name if extract else 'netlist'
-                view_name = tbm_specs.get('view_name', 'schematic')
+                # TODO: Is netlist always the right keyword?
+                view_name = tbm_specs.get('view_name', 'netlist' if extract else 'schematic')
                 sim_view_list.append((impl_cell, view_name))
             sim_envs = tbm_specs['sim_envs']
 
-            # pop the wrapper from tbm_specs (default to None), if gen_wrapper is False make it None
-            wrapper_dict = tbm_specs.pop('wrapper', None)
-            if wrapper_dict and not gen_wrapper:
-                wrapper_dict = None
             if load_results:
                 return tbm.load_results(impl_cell, tbm_specs)
-            if run_sim:
-                results = tbm.simulate(impl_lib=impl_lib,
-                                       impl_cell=impl_cell,
-                                       sim_view_list=sim_view_list,
-                                       env_list=sim_envs,
-                                       tb_dict=tbm_specs,
-                                       wrapper_dict=wrapper_dict,
-                                       gen_tb=gen_tb)
-                return results
+            results = tbm.simulate(impl_lib=impl_lib,
+                                   impl_cell=impl_cell,
+                                   sim_view_list=sim_view_list,
+                                   env_list=sim_envs,
+                                   tb_dict=tbm_specs,
+                                   wrapper_dict=None,
+                                   gen_tb=gen_tb,
+                                   gen_wrapper=gen_wrapper,
+                                   run_sim=run_sim)
+            return results
 
         sim_params = specs.get('sim_params', None)
         wrapper = sim_params.get('wrapper', None)
@@ -875,11 +878,18 @@ class BagProject(object):
 
         if run_sim:
             print('seting up ADEXL ...')
-            # TODO: find the proper way of getting proper view_name based on the extract flag only
+            # TODO: when running simulations directly (not through tb_manager), sim_view_list is
+            #  not supported
+            # TODO: netlist might not be always the right keyword.
             # something like:
             # view_name = self.get_proper_view_name if extract else 'netlist'
 
-            view_name = sim_params.get('view_name', 'netlist')
+            sim_view_list = sim_params.get('sim_view_list', [])
+            if not sim_view_list:
+                # TODO: Is netlist always the right keyword?
+                view_name = sim_params.get('view_name', 'netlist' if extract else 'schematic')
+                sim_view_list.append((impl_cell, view_name))
+
             sim_envs = sim_params['sim_envs']
             sim_swp_params = sim_params.get('sim_swp_params', {})
             sim_vars = sim_params.get('sim_vars', {})
@@ -887,16 +897,22 @@ class BagProject(object):
 
             tb = self.configure_testbench(impl_lib, tb_name)
 
+            # set simulation variables
             for key, val in sim_vars.items():
                 tb.set_parameter(key, val)
 
+            # set sweep parameters
             for key, val in sim_swp_params.items():
                 tb.set_sweep_parameter(key, values=val)
 
+            # set the simulation outputs
             for key, val in sim_outputs.items():
                 tb.add_output(key, val)
 
-            tb.set_simulation_view(impl_lib, tb_cell, view_name)
+            # change the view_name (netlist or schematic)
+            for cell, view in sim_view_list.items():
+                tb.set_simulation_view(impl_lib, cell, view)
+
             tb.set_simulation_environments(sim_envs)
             tb.update_testbench()
             print('setup completed.')
@@ -910,6 +926,75 @@ class BagProject(object):
             sim_data.save_sim_results(results, tb_fname)
             print('results saved.')
             return results
+
+    def measure_cell(self,
+                     specs: Dict[str, Any],
+                     gen_cell: bool = True,
+                     gen_wrapper: bool = True,
+                     gen_tb: bool = True,
+                     load_results: bool = False,
+                     extract: bool = False,
+                     run_sims: bool = True) -> Optional[Dict[str, Any]]:
+        """
+        Runs a minimum executable parts of the Measurement Manager flow selectively according to
+        a spec dictionary.
+
+        For example you can set the flags to generate a new cell, but since wrapper and test bench
+        exist, maybe you want to skip those, and run the measurement in the end. Maybe you
+        already created the cell all the way up to test bench level, and now you only need to
+        run simulation.
+
+        This function only works with Measurement Managers written in format of
+        simulation.core_v2.MeasurementManager
+
+        Parameters
+        ----------
+        specs:
+            Dictionary of specifications
+            Some non-obvious conventions:
+            - if contains tbm_specs keyword, simulation is ran through testbench manager v2,
+            otherwise there should be a sim_params entry that specifies the simulation.
+            - Wrapper is assumed to be in the specs dictionary, if it is generated outside of
+            this function, gen_wrapper should be False.
+        gen_cell:
+            True to call generate_cell on specs
+        gen_wrapper:
+            True to generate Wrapper. Currently only one top-level wrapper is supported.
+        gen_tb:
+            True to generate test bench. If test bench is created, this flag can be set to False.
+        load_results:
+            True to skip simulation and load the results.
+        extract:
+            False to skip layout generation and only simulate schematic
+        run_sims:
+            True to run simulations. If the purpose of calling this function is just to generate
+            some part of simulation flow to debug, this flag can be set to False.
+        Returns
+        -------
+        results: Optional[Dict[str, Any]]
+            if run_sim/load_results = True, contains measurement results, otherwise it's None.
+        """
+
+        impl_lib = specs['impl_lib']
+        impl_cell = specs['impl_cell']
+        root_dir = Path(specs['root_dir'])
+
+        if gen_cell and not load_results:
+            print('generating cell ...')
+            self.generate_cell(specs,
+                               gen_lay=extract,
+                               gen_sch=True,
+                               run_lvs=extract,
+                               run_rcx=extract,
+                               use_cybagoa=True)
+            print('cell generated.')
+
+        mm_specs = specs['mm_specs']
+        mm_cls_str = mm_specs['mm_cls']
+        mm_cls = _import_class_from_str(mm_cls_str)
+        mm: MeasurementManager = mm_cls(self, root_dir, mm_specs)
+        return mm.measure(impl_lib, impl_cell, load_results=load_results, gen_wrapper=gen_wrapper,
+                          gen_tb=gen_tb, run_sims=run_sims)
 
     def create_library(self, lib_name, lib_path=''):
         # type: (str, str) -> None
