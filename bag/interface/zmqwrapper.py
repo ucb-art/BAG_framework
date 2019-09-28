@@ -2,7 +2,7 @@
 
 """This module defines various wrapper around ZMQ sockets."""
 
-import datetime
+from datetime import datetime
 import zlib
 import pprint
 from pathlib import Path
@@ -53,10 +53,10 @@ class ZMQDealer(object):
             log_dir: Path = self._log_file.parent
             log_dir.mkdir(parents=True, exist_ok=True)
             # time stamp the file
-            now = datetime.datetime.now()
-            time_stamp = now.strftime('%Y%m%d_%H%M%S')
+            now = datetime.now()
+            time_stamp = now.strftime('%Y%m%d_%H%M%S%f')
             ext = self._log_file.suffix
-            self._log_file = str(log_dir / f'{self._log_file.stem}_{time_stamp}.{ext}')
+            self._log_file = str(log_dir / f'{self._log_file.stem}_{time_stamp}{ext}')
 
     def log_msg(self, msg):
         """Log the given message"""
