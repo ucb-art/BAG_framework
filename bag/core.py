@@ -802,7 +802,7 @@ class BagProject(object):
         if tbm_specs:
             tbm_cls_str = tbm_specs['tbm_cls']
             tbm_cls = _import_class_from_str(tbm_cls_str)
-            tbm: TestbenchManager = tbm_cls(self, root_dir)
+            tbm: TestbenchManager = tbm_cls(root_dir)
             sim_view_list = tbm_specs.get('sim_view_list', [])
             if not sim_view_list:
                 # TODO: Is netlist always the right keyword?
@@ -812,7 +812,8 @@ class BagProject(object):
 
             if load_results:
                 return tbm.load_results(impl_cell, tbm_specs)
-            results = tbm.simulate(impl_lib=impl_lib,
+            results = tbm.simulate(bprj=self,
+                                   impl_lib=impl_lib,
                                    impl_cell=impl_cell,
                                    sim_view_list=sim_view_list,
                                    env_list=sim_envs,
@@ -992,9 +993,9 @@ class BagProject(object):
         mm_specs = specs['mm_specs']
         mm_cls_str = mm_specs['mm_cls']
         mm_cls = _import_class_from_str(mm_cls_str)
-        mm: MeasurementManager = mm_cls(self, root_dir, mm_specs)
-        return mm.measure(impl_lib, impl_cell, load_results=load_results, gen_wrapper=gen_wrapper,
-                          gen_tb=gen_tb, run_sims=run_sims)
+        mm: MeasurementManager = mm_cls(root_dir, mm_specs)
+        return mm.measure(self, impl_lib, impl_cell, load_results=load_results,
+                          gen_wrapper=gen_wrapper, gen_tb=gen_tb, run_sims=run_sims)
 
     def create_library(self, lib_name, lib_path=''):
         # type: (str, str) -> None

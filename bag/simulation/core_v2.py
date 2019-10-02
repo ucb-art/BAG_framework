@@ -24,14 +24,11 @@ class TestbenchManager(abc.ABC):
 
     Parameters
     ----------
-    prj : BagProject
-        BagProject object
     work_dir : Path
         working directory path.
     """
 
-    def __init__(self, prj: BagProject, work_dir: Path) -> None:
-        self._prj = prj
+    def __init__(self, work_dir: Path) -> None:
         self._work_dir = work_dir.resolve()
         self._work_dir.mkdir(parents=True, exist_ok=True)
         self._specs = None
@@ -65,11 +62,10 @@ class TestbenchManager(abc.ABC):
         """
         return tb_params
 
-    def setup(self, impl_lib, impl_cell, sim_view_list, env_list,
+    def setup(self, bprj, impl_lib, impl_cell, sim_view_list, env_list,
               tb_dict, wrapper_dict=None, gen_tb=True, gen_wrapper=True) -> Testbench:
         tb_dict = self.pre_setup(tb_dict)
         self._specs = tb_dict
-        prj = self._prj
 
         if wrapper_dict is None:
             wrapper_dict = tb_dict.pop('wrapper', None)
@@ -96,7 +92,7 @@ class TestbenchManager(abc.ABC):
             # noinspection PyUnboundLocalVariable
             print(f'Generating wrapper {impl_lib}_{wrapped_cell}')
             # noinspection PyUnboundLocalVariable
-            master = prj.create_design_module(lib_name=wrapper_lib, cell_name=wrapper_cell)
+            master = bprj.create_design_module(lib_name=wrapper_lib, cell_name=wrapper_cell)
             # noinspection PyUnboundLocalVariable
             master.design(dut_lib=impl_lib, dut_cell=impl_cell, **wrapper_params)
             master.implement_design(impl_lib, wrapped_cell)
@@ -104,15 +100,15 @@ class TestbenchManager(abc.ABC):
 
         if not gen_tb:
             print(f'loading testbench {impl_lib}_{tb_name}')
-            tb = prj.load_testbench(impl_lib, tb_name)
+            tb = bprj.load_testbench(impl_lib, tb_name)
         else:
             print(f'Generating testbench {impl_cell}_{tb_name}')
-            tb_master = prj.create_design_module(tb_lib, tb_cell)
+            tb_master = bprj.create_design_module(tb_lib, tb_cell)
             dut_cell = wrapped_cell if has_wrapper else impl_cell
             tb_master.design(dut_lib=impl_lib, dut_cell=dut_cell, **tb_params)
             tb_master.implement_design(impl_lib, tb_name)
             print('testbench generated.')
-            tb = prj.configure_testbench(impl_lib, tb_name)
+            tb = bprj.configure_testbench(impl_lib, tb_name)
 
         print(f'Configuring testbench {tb_name}')
 
@@ -137,9 +133,9 @@ class TestbenchManager(abc.ABC):
         tb.update_testbench()
         return tb
 
-    async def setup_and_simulate(self, impl_lib, impl_cell, sim_view_list, env_list, tb_dict,
+    async def setup_and_simulate(self, bprj, impl_lib, impl_cell, sim_view_list, env_list, tb_dict,
                                  wrapper_dict, gen_tb, gen_wrapper, run_sim):
-        tb: Testbench = self.setup(impl_lib=impl_lib, impl_cell=impl_cell,
+        tb: Testbench = self.setup(bprj, impl_lib=impl_lib, impl_cell=impl_cell,
                                    sim_view_list=sim_view_list, env_list=env_list,
                                    tb_dict=tb_dict, wrapper_dict=wrapper_dict, gen_tb=gen_tb,
                                    gen_wrapper=gen_wrapper)
@@ -152,9 +148,9 @@ class TestbenchManager(abc.ABC):
             save_sim_results(results, results_dir)
             return results
 
-    def simulate(self, impl_lib, impl_cell, sim_view_list, env_list, tb_dict,
+    def simulate(self, bprj, impl_lib, impl_cell, sim_view_list, env_list, tb_dict,
                  wrapper_dict=None, gen_tb=True, gen_wrapper=True, run_sim=True):
-        coro = self.setup_and_simulate(impl_lib=impl_lib, impl_cell=impl_cell,
+        coro = self.setup_and_simulate(bprj, impl_lib=impl_lib, impl_cell=impl_cell,
                                        sim_view_list=sim_view_list, env_list=env_list,
                                        tb_dict=tb_dict, wrapper_dict=wrapper_dict, gen_tb=gen_tb,
                                        gen_wrapper=gen_wrapper, run_sim=run_sim)
@@ -176,8 +172,7 @@ class TestbenchManager(abc.ABC):
 
 class MeasurementManager(abc.ABC):
 
-    def __init__(self, prj: BagProject, work_dir: Path, mm_specs: Dict[str, Any]) -> None:
-        self._prj = prj
+    def __init__(self, work_dir: Path, mm_specs: Dict[str, Any]) -> None:
         self._work_dir = work_dir
         self._specs = mm_specs
 
@@ -207,7 +202,7 @@ class MeasurementManager(abc.ABC):
             tbm_cls = _import_class_from_str(tb_dict['tbm_cls'])
             tbm_cls = cast(Type[TestbenchManager], tbm_cls)
             self.tb_params[tb_name] = tb_dict
-            self.tb_managers[tb_name] = tbm_cls(self._prj, self._work_dir)
+            self.tb_managers[tb_name] = tbm_cls(self._work_dir)
 
     def _prepare_tbm_dict(self, impl_cell, tbm_dict, extract):
         # adds sim_view_list and env_list to tbm_dict if they don't exist, so that after this
@@ -233,7 +228,7 @@ class MeasurementManager(abc.ABC):
         # checks if the wrapper (around impl_lib, impl_cell) has been created to avoid recreation
         return wrapper in self._wrapper_lookup
 
-    def run_tb(self, impl_lib, impl_cell, tb_name, tbm_dict=None, extract=True,
+    def run_tb(self, bprj, impl_lib, impl_cell, tb_name, tbm_dict=None, extract=True,
                load_results=False):
         # if tb_dict is None the default tb_dict is used
         if tbm_dict is None:
@@ -254,7 +249,7 @@ class MeasurementManager(abc.ABC):
         sim_view_list = tbm_dict['sim_view_list']
         sim_envs = tbm_dict['sim_envs']
 
-        results = tb_obj.simulate(impl_lib, impl_cell, sim_view_list=sim_view_list,
+        results = tb_obj.simulate(bprj, impl_lib, impl_cell, sim_view_list=sim_view_list,
                                   env_list=sim_envs, tb_dict=tbm_dict, gen_tb=self.gen_tb,
                                   gen_wrapper=gen_wrapper, run_sim=self.run_sims)
 
@@ -264,7 +259,8 @@ class MeasurementManager(abc.ABC):
         return results
 
     @abc.abstractmethod
-    def run_flow(self, impl_lib: str, impl_cell: str, load_results: bool = False) -> Any:
+    def run_flow(self, bprj: BagProject, impl_lib: str, impl_cell: str,
+                 load_results: bool = False) -> Any:
         """
         Defines the FSM in code rather than passing state indicators through a dictionary
         use self.run_tb to orchestrate test benches and modify their parameters if necessary
@@ -273,6 +269,8 @@ class MeasurementManager(abc.ABC):
 
         Parameters
         ----------
+        bprj: BagProject
+            BagProject object
         impl_lib:
             DUT implementation library
         impl_cell
@@ -287,10 +285,10 @@ class MeasurementManager(abc.ABC):
 
         raise NotImplementedError
 
-    def measure(self, impl_lib: str, impl_cell: str, load_results: bool = False,
+    def measure(self, bprj: BagProject, impl_lib: str, impl_cell: str, load_results: bool = False,
                 gen_wrapper: bool = True, gen_tb: bool = True, run_sims: bool = True) -> Any:
         self.gen_wrapper = gen_wrapper
         self.gen_tb = gen_tb
         self.run_sims = run_sims
 
-        return self.run_flow(impl_lib, impl_cell, load_results)
+        return self.run_flow(bprj, impl_lib, impl_cell, load_results)
