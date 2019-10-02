@@ -6,6 +6,7 @@
 from typing import TYPE_CHECKING, Optional, List, Tuple, Dict, Any, Sequence
 
 import os
+import subprocess
 
 from .virtuoso import VirtuosoChecker
 from ..io import read_file, open_temp, readlines_iter
@@ -41,9 +42,11 @@ def lvs_passed(retcode, log_file):
     if not os.path.isfile(log_file):
         return False, ''
 
-    cmd_output = read_file(log_file)
-    test_str = 'LVS completed. CORRECT. See report file:'
-    return test_str in cmd_output, log_file
+    test_str = 'LVS completed. CORRECT.'
+    LogCheck = subprocess.Popen(['grep', '-i', test_str, log_file], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = LogCheck.communicate()
+
+    return stdout.decode() != '', log_file
 
 
 # noinspection PyUnusedLocal
@@ -68,9 +71,11 @@ def query_passed(retcode, log_file):
     if not os.path.isfile(log_file):
         return False, ''
 
-    cmd_output = read_file(log_file)
     test_str = 'OK: Terminating.'
-    return test_str in cmd_output, log_file
+    LogCheck = subprocess.Popen(['grep', '-i', test_str, log_file], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = LogCheck.communicate()
+
+    return stdout.decode() != '', log_file
 
 
 class Calibre(VirtuosoChecker):
@@ -114,7 +119,7 @@ class Calibre(VirtuosoChecker):
 
         self.default_rcx_params = rcx_params
         self.default_lvs_params = lvs_params
-        self.lvs_run_dir = os.path.abspath(rcx_run_dir if rcx_mode == 'starrc' else lvs_run_dir)
+        self.lvs_run_dir = os.path.abspath(rcx_run_dir if (rcx_mode == 'starrc' or rcx_mode == 'qrc') else lvs_run_dir)
         self.lvs_runset = lvs_runset
         self.rcx_run_dir = os.path.abspath(rcx_run_dir)
         self.rcx_runset = rcx_runset
@@ -139,7 +144,7 @@ class Calibre(VirtuosoChecker):
             a list of generated extraction netlist file names.  The first index is the main netlist.
         """
         # PVS generate schematic cellviews directly.
-        if self.rcx_mode == 'starrc':
+        if self.rcx_mode == 'starrc' or self.rcx_mode == 'qrc':
             return ['%s.spf' % cell_name]
         else:
             return ['%s.pex.netlist' % cell_name,
@@ -200,8 +205,8 @@ class Calibre(VirtuosoChecker):
         return flow_list
 
     def setup_rcx_flow(self, lib_name, cell_name, sch_view='schematic', lay_view='layout',
-                       params=None):
-        # type: (str, str, str, str, Optional[Dict[str, Any]]) -> Sequence[FlowInfo]
+                       params=None, **kwargs):
+        # type: (str, str, str, str, Optional[Dict[str, Any]], Any) -> Sequence[FlowInfo]
 
         # update default RCX parameters.
         rcx_params_actual = self.default_rcx_params.copy()
@@ -212,9 +217,13 @@ class Calibre(VirtuosoChecker):
         os.makedirs(run_dir, exist_ok=True)
 
         # make symlinks
+        query_input = None
         if self.rcx_link_files:
             for source_file in self.rcx_link_files:
-                targ_file = os.path.join(run_dir, os.path.basename(source_file))
+                base_name = os.path.basename(source_file)
+                targ_file = os.path.join(run_dir, base_name)
+                if 'query' in base_name:
+                    query_input = targ_file
                 if not os.path.exists(targ_file):
                     os.symlink(source_file, targ_file)
 
@@ -222,13 +231,28 @@ class Calibre(VirtuosoChecker):
         with open_temp(prefix='rcxLog', dir=run_dir, delete=False) as logf:
             log_file = logf.name
         flow_list = []
-        cmd, log, env, cwd = self.setup_export_layout(lib_name, cell_name, lay_file, lay_view, None)
-        flow_list.append((cmd, log, env, cwd, _all_pass))
+
+        # Check if gds layout is provided
+        gds_layout_path = kwargs.pop('gds_layout_path', None)
+
+        # If not provided the gds layout, need to export layout
+        if not gds_layout_path:
+            cmd, log, env, cwd = self.setup_export_layout(lib_name, cell_name, lay_file, lay_view, None)
+            flow_list.append((cmd, log, env, cwd, _all_pass))
+        # If provided gds layout, do not export layout, just copy gds
+        else:
+            if not os.path.exists(gds_layout_path):
+                raise ValueError(f'gds_layout_path does not exist: {gds_layout_path}')
+            with open_temp(prefix='copy', dir=run_dir, delete=True) as f:
+                copy_log_file = f.name
+            copy_cmd = ['cp', gds_layout_path, os.path.abspath(lay_file)]
+            flow_list.append((copy_cmd, copy_log_file, None, None, _all_pass))
+
         cmd, log, env, cwd = self.setup_export_schematic(lib_name, cell_name, sch_file, sch_view,
                                                          None)
         flow_list.append((cmd, log, env, cwd, _all_pass))
 
-        if self.rcx_mode == 'starrc':
+        if self.rcx_mode == 'starrc' or self.rcx_mode == 'qrc':
             # check if LVS was run prior to run_rcx
             sp_file = os.path.join(run_dir, cell_name + '.sp')
             if not os.path.isfile(sp_file):
@@ -238,22 +262,33 @@ class Calibre(VirtuosoChecker):
             with open_temp(prefix='queryLog', dir=run_dir, delete=False) as queryf:
                 query_file = queryf.name
 
-            query_input = os.path.join(run_dir, 'query.input')
+            if query_input is None:
+                query_input = os.path.join(run_dir, 'query.input')
             cmd = ['calibre', '-query_input', query_input,
                    '-query', os.path.join(run_dir, 'svdb'), cell_name]
             flow_list.append((cmd, query_file, None, run_dir,
                               lambda rc, lf: query_passed(rc, lf)[0]))
 
-            # generate new cmd for StarXtract
-            cmd_content, result = self.modify_starrc_cmd(run_dir, cell_name, rcx_params_actual,
-                                                         query_input, sch_file)
+            if self.rcx_mode == 'starrc':
+                # generate new cmd for StarXtract
+                cmd_content, result = self.modify_starrc_cmd(run_dir, lib_name, cell_name,
+                                                             rcx_params_actual, query_input, sch_file)
 
-            # save cmd for StarXtract
-            with open_temp(dir=run_dir, delete=False) as cmd_file:
-                cmd_fname = cmd_file.name
-                cmd_file.write(cmd_content)
+                # save cmd for StarXtract
+                with open_temp(dir=run_dir, delete=False) as cmd_file:
+                    cmd_fname = cmd_file.name
+                    cmd_file.write(cmd_content)
 
-            cmd = ['StarXtract', cmd_fname]
+                cmd = ['StarXtract', cmd_fname]
+            else:
+                # generate new cmd for QRC
+                cmd_content, result = self.modify_qrc_cmd(run_dir, cell_name, rcx_params_actual, sch_file)
+                # save cmd for QRC
+                with open_temp(dir=run_dir, delete=False) as cmd_file:
+                    cmd_fname = cmd_file.name
+                    cmd_file.write(cmd_content)
+
+                cmd = ['qrc', '-64', '-cmd', cmd_fname]
         elif self.rcx_mode == 'pex':
             # generate new runset
             runset_content, result = self.modify_pex_runset(run_dir, lib_name, cell_name, lay_view,
@@ -291,6 +326,16 @@ class Calibre(VirtuosoChecker):
         def rcx_passed(retcode, log_fname):
             if not os.path.isfile(result):
                 return None, log_fname
+
+            if self.rcx_mode == 'qrc':
+                test_str = ' terminated normally  *****'
+                LogCheck = subprocess.Popen(['grep', '-i', test_str, log_fname], stdout=subprocess.PIPE,
+                                            stderr=subprocess.STDOUT)
+                stdout, stderr = LogCheck.communicate()
+
+                if stdout.decode() == '':
+                    return None, log_fname
+
             return result, log_fname
 
         flow_list.append((cmd, log_file, None, run_dir, rcx_passed))
@@ -460,14 +505,16 @@ class Calibre(VirtuosoChecker):
 
         return content, os.path.join(run_dir, output_name)
 
-    def modify_starrc_cmd(self, run_dir, cell_name, starrc_params, query_input, sch_file):
-        # type: (str, str, Dict[str, Any], str, str) -> Tuple[str, str]
+    def modify_starrc_cmd(self, run_dir, lib_name, cell_name, starrc_params, query_input, sch_file):
+        # type: (str, str, str, Dict[str, Any], str, str) -> Tuple[str, str]
         """Modify the cmd file.
 
         Parameters
         ----------
         run_dir : str
             the run directory.
+        lib_name : str
+            the library name.
         cell_name : str
             the cell name.
         starrc_params : Dict[str, Any]
@@ -485,12 +532,62 @@ class Calibre(VirtuosoChecker):
             the extracted netlist file.
         """
         output_name = '%s.spf' % cell_name
+        if 'CDSLIBPATH' in os.environ:
+            cds_lib_path = os.path.abspath(os.path.join(os.environ['CDSLIBPATH'], 'cds.lib'))
+        else:
+            cds_lib_path = os.path.abspath('./cds.lib')
         content = self.render_string_template(read_file(self.rcx_runset),
                                               dict(
                                                   cell_name=cell_name,
                                                   query_input=query_input,
                                                   extract_type=starrc_params['extract'].get('type'),
+                                                  netlist_format=starrc_params.get('netlist_format',
+                                                                                   'SPF'),
                                                   sch_file=sch_file,
+                                                  cds_lib=cds_lib_path,
+                                                  lib_name=lib_name,
+                                                  run_dir=run_dir,
+                                                  skew=starrc_params.get('skew', 'tt'),
+                                              ))
+
+        return content, os.path.join(run_dir, output_name)
+
+    def modify_qrc_cmd(self, run_dir, cell_name, qrc_params, sch_file):
+        # type: (str, str, Dict[str, Any], str) -> Tuple[str, str]
+        """Modify the cmd file.
+
+        Parameters
+        ----------
+        run_dir : str
+            the run directory.
+        cell_name : str
+            the cell name.
+        qrc_params : Dict[str, Any]
+            override QRC parameters.
+        sch_file : str
+            the schematic netlist
+
+        Returns
+        -------
+        qrc_cmd : str
+            the new QRC cmd file.
+        output_name : str
+            the extracted netlist file.
+        """
+        output_name = '%s.spf' % cell_name
+        if 'CDSLIBPATH' in os.environ:
+            cds_lib_path = os.path.abspath(os.path.join(os.environ['CDSLIBPATH'], 'cds.lib'))
+        else:
+            cds_lib_path = os.path.abspath('./cds.lib')
+        content = self.render_string_template(read_file(self.rcx_runset),
+                                              dict(
+                                                  cell_name=cell_name,
+                                                  netlist_format=qrc_params.get('netlist_format',
+                                                                                'spf'),
+                                                  sch_file=sch_file,
+                                                  cds_lib=cds_lib_path,
+                                                  skew=qrc_params.get('skew', 'tt'),
+                                                  temp=qrc_params.get('temp', '25'),
                                               ))
 
         return content, os.path.join(run_dir, output_name)

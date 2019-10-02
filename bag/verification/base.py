@@ -236,8 +236,8 @@ class SubProcessChecker(Checker, abc.ABC):
 
     @abc.abstractmethod
     def setup_rcx_flow(self, lib_name, cell_name, sch_view='schematic',
-                       lay_view='layout', params=None):
-        # type: (str, str, str, str, Optional[Dict[str, Any]]) -> Sequence[FlowInfo]
+                       lay_view='layout', params=None, **kwargs):
+        # type: (str, str, str, str, Optional[Dict[str, Any]], Any) -> Sequence[FlowInfo]
         """This method performs any setup necessary to configure a RCX subprocess flow.
 
         Parameters
@@ -252,6 +252,10 @@ class SubProcessChecker(Checker, abc.ABC):
             layout view name.
         params : Optional[Dict[str, Any]]
             optional RCX parameter values.
+        kwargs : Any
+            optional keyword arguments.
+            gds_layout_path : str
+                Path to the gds of the layout. If passed, do not export layout, instead copy gds
 
         Returns
         -------

@@ -6,6 +6,7 @@
 from typing import TYPE_CHECKING, Optional, List, Tuple, Dict, Any, Sequence
 
 import os
+import subprocess
 
 from .virtuoso import VirtuosoChecker
 from ..io import read_file, open_temp
@@ -51,10 +52,11 @@ def lvs_passed(retcode, log_file):
     if not os.path.isfile(log_file):
         return False, ''
 
-    cmd_output = read_file(log_file)
     test_str = 'Final comparison result:PASS'
+    LogCheck = subprocess.Popen(['grep', '-i', test_str, log_file], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = LogCheck.communicate()
 
-    return test_str in cmd_output, log_file
+    return stdout.decode() != '', log_file
 
 
 class ICV(VirtuosoChecker):
@@ -104,6 +106,7 @@ class ICV(VirtuosoChecker):
         self.rcx_runset = rcx_runset
         self.rcx_link_files = rcx_link_files
         self.rcx_mode = rcx_mode
+        self.netlist_format = 'netlist'
 
     def get_rcx_netlists(self, lib_name, cell_name):
         # type: (str, str) -> List[str]
@@ -122,10 +125,10 @@ class ICV(VirtuosoChecker):
             a list of generated extraction netlist file names.  The first index is the main netlist.
         """
         # PVS generate schematic cellviews directly.
-        if self.rcx_mode == 'starrc':
+        if self.rcx_mode == 'starrc' and self.netlist_format == 'netlist':
             return ['%s.spf' % cell_name]
         else:
-            pass
+            return []
 
     def setup_lvs_flow(self, lib_name, cell_name, sch_view='schematic', lay_view='layout',
                        params=None, **kwargs):
@@ -177,8 +180,8 @@ class ICV(VirtuosoChecker):
         return flow_list
 
     def setup_rcx_flow(self, lib_name, cell_name, sch_view='schematic', lay_view='layout',
-                       params=None):
-        # type: (str, str, str, str, Optional[Dict[str, Any]]) -> Sequence[FlowInfo]
+                       params=None, **kwargs):
+        # type: (str, str, str, str, Optional[Dict[str, Any]], Any) -> Sequence[FlowInfo]
 
         # update default RCX parameters.
         rcx_params_actual = self.default_rcx_params.copy()
@@ -192,8 +195,22 @@ class ICV(VirtuosoChecker):
         with open_temp(prefix='rcxLog', dir=run_dir, delete=False) as logf:
             log_file = logf.name
         flow_list = []
-        cmd, log, env, cwd = self.setup_export_layout(lib_name, cell_name, lay_file, lay_view, None)
-        flow_list.append((cmd, log, env, cwd, _all_pass))
+        # Check if gds layout is provided
+        gds_layout_path = kwargs.pop('gds_layout_path', None)
+
+        # If not provided the gds layout, need to export layout
+        if not gds_layout_path:
+            cmd, log, env, cwd = self.setup_export_layout(lib_name, cell_name, lay_file, lay_view, None)
+            flow_list.append((cmd, log, env, cwd, _all_pass))
+        # If provided gds layout, do not export layout, just copy gds
+        else:
+            if not os.path.exists(gds_layout_path):
+                raise ValueError(f'gds_layout_path does not exist: {gds_layout_path}')
+            with open_temp(prefix='copy', dir=run_dir, delete=True) as f:
+                copy_log_file = f.name
+            copy_cmd = ['cp', gds_layout_path, os.path.abspath(lay_file)]
+            flow_list.append((copy_cmd, copy_log_file, None, None, _all_pass))
+
         cmd, log, env, cwd = self.setup_export_schematic(lib_name, cell_name, sch_file, sch_view, None)
         flow_list.append((cmd, log, env, cwd, _all_pass))
 
@@ -250,11 +267,16 @@ class ICV(VirtuosoChecker):
             if not os.path.isfile(log_fname):
                 return None, ''
 
-            cmd_output = read_file(log_fname)
             test_str = 'DRC and Extraction Results: CLEAN'
+            LogCheck = subprocess.Popen(['grep', '-i', test_str, log_fname], stdout=subprocess.PIPE,
+                                        stderr=subprocess.STDOUT)
+            stdout, stderr = LogCheck.communicate()
 
-            if test_str in cmd_output:
-                return results_file, log_fname
+            if stdout.decode() != '':
+                if self.netlist_format == 'netlist':
+                    return results_file, log_fname
+                else:
+                    return [], log_fname
             else:
                 return None, log_fname
 
@@ -307,4 +329,5 @@ class ICV(VirtuosoChecker):
                                                   lib_name=lib_name,
                                                   run_dir=run_dir,
                                               ))
+        self.netlist_format = starrc_params.get('netlist_format', 'netlist')
         return content, os.path.join(run_dir, output_name)

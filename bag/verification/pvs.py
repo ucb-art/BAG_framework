@@ -6,6 +6,7 @@
 from typing import TYPE_CHECKING, Optional, List, Dict, Any, Sequence, Tuple
 
 import os
+import subprocess
 import time
 
 import yaml
@@ -44,9 +45,11 @@ def lvs_passed(retcode, log_file):
     if not os.path.isfile(log_file):
         return False, ''
 
-    cmd_output = read_file(log_file)
     test_str = '# Run Result             : MATCH'
-    return test_str in cmd_output, log_file
+    LogCheck = subprocess.Popen(['grep', '-i', test_str, log_file], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = LogCheck.communicate()
+
+    return stdout.decode() != '', log_file
 
 
 # noinspection PyUnusedLocal
@@ -70,9 +73,11 @@ def rcx_passed(retcode, log_file):
     if not os.path.isfile(log_file):
         return None, ''
 
-    cmd_output = read_file(log_file)
-    test_str = 'INFO (LBRCXM-708): *****  Quantus QRC terminated normally  *****'
-    if test_str in cmd_output:
+    test_str = ' terminated normally  *****'
+    LogCheck = subprocess.Popen(['grep', '-i', test_str, log_file], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = LogCheck.communicate()
+
+    if stdout.decode() != '':
         return '', log_file
     else:
         return None, ''
@@ -179,8 +184,8 @@ class PVS(VirtuosoChecker):
         return flow_list
 
     def setup_rcx_flow(self, lib_name, cell_name, sch_view='schematic', lay_view='layout',
-                       params=None):
-        # type: (str, str, str, str, Optional[Dict[str, Any]]) -> Sequence[FlowInfo]
+                       params=None, **kwargs):
+        # type: (str, str, str, str, Optional[Dict[str, Any]], Any) -> Sequence[FlowInfo]
 
         # update default RCX parameters.
         rcx_params_actual = self.default_rcx_params.copy()
