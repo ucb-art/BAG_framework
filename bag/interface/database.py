@@ -559,7 +559,7 @@ class DbAccess(InterfaceBase, abc.ABC):
 
         # update netlist file
         content = self.parse_schematic_template(lib_name, cell_name)
-        sch_info = yaml.load(content)
+        sch_info = yaml.load(content, Loader=yaml.FullLoader)
         try:
             write_file(yaml_file, content)
         except IOError:
