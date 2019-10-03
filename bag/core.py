@@ -712,24 +712,20 @@ class BagProject(object):
         if run_lvs:
             print('running lvs...')
             lvs_passed, lvs_log = self.run_lvs(impl_lib, impl_cell, gds_lay_file=gds_lay_file)
-            print('LVS log: %s' % lvs_log)
             if lvs_passed:
                 print('LVS passed!')
                 result = dict(log='')
             else:
-                print('LVS failed...')
-                result = dict(log=lvs_log)
+                raise ValueError(f'LVS failed, lvs_log: {lvs_log}')
 
         if run_rcx and ((run_lvs and lvs_passed) or not run_lvs):
             print('running rcx...')
             rcx_passed, rcx_log = self.run_rcx(impl_lib, impl_cell)
-            print('RCX log: %s' % rcx_log)
             if rcx_passed:
                 print('RCX passed!')
                 result = dict(log='')
             else:
-                print('RCX failed...')
-                result = dict(log=rcx_log)
+                raise ValueError(f'RCX failed, rcx_log: {rcx_log}')
 
         if result_pstat:
             return result_pstat
@@ -805,8 +801,7 @@ class BagProject(object):
             tbm: TestbenchManager = tbm_cls(root_dir)
             sim_view_list = tbm_specs.get('sim_view_list', [])
             if not sim_view_list:
-                # TODO: Is netlist always the right keyword?
-                view_name = tbm_specs.get('view_name', 'netlist' if extract else 'schematic')
+                view_name = 'netlist' if extract else 'schematic'
                 sim_view_list.append((impl_cell, view_name))
             sim_envs = tbm_specs['sim_envs']
 
@@ -879,16 +874,9 @@ class BagProject(object):
 
         if run_sim:
             print('seting up ADEXL ...')
-            # TODO: when running simulations directly (not through tb_manager), sim_view_list is
-            #  not supported
-            # TODO: netlist might not be always the right keyword.
-            # something like:
-            # view_name = self.get_proper_view_name if extract else 'netlist'
-
             sim_view_list = sim_params.get('sim_view_list', [])
             if not sim_view_list:
-                # TODO: Is netlist always the right keyword?
-                view_name = sim_params.get('view_name', 'netlist' if extract else 'schematic')
+                view_name = 'netlist' if extract else 'schematic'
                 sim_view_list.append((impl_cell, view_name))
 
             sim_envs = sim_params['sim_envs']
@@ -904,14 +892,14 @@ class BagProject(object):
 
             # set sweep parameters
             for key, val in sim_swp_params.items():
-                tb.set_sweep_parameter(key, values=val)
+                tb.set_sweep_parameter(key, **val)
 
             # set the simulation outputs
             for key, val in sim_outputs.items():
                 tb.add_output(key, val)
 
             # change the view_name (netlist or schematic)
-            for cell, view in sim_view_list.items():
+            for cell, view in sim_view_list:
                 tb.set_simulation_view(impl_lib, cell, view)
 
             tb.set_simulation_environments(sim_envs)

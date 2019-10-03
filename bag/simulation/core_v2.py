@@ -125,12 +125,13 @@ class TestbenchManager(abc.ABC):
             tb.set_parameter(key, val)
 
         for key, val in sim_swp_params.items():
-            tb.set_sweep_parameter(key, values=val)
+            tb.set_sweep_parameter(key, **val)
 
         for key, val in sim_outputs.items():
             tb.add_output(key, val)
 
         tb.update_testbench()
+        print(f'Testbench configured.')
         return tb
 
     async def setup_and_simulate(self, bprj, impl_lib, impl_cell, sim_view_list, env_list, tb_dict,
@@ -140,9 +141,9 @@ class TestbenchManager(abc.ABC):
                                    tb_dict=tb_dict, wrapper_dict=wrapper_dict, gen_tb=gen_tb,
                                    gen_wrapper=gen_wrapper)
         if run_sim:
-            print('Simulating %s' % tb.cell)
+            print(f'Simulating {tb.cell}')
             save_dir = await tb.async_run_simulation()
-            print('Finished simulating %s' % tb.cell)
+            print(f'Finished simulating {tb.cell}')
             results = load_sim_results(save_dir)
             results_dir = str(self.work_dir / impl_cell / f'{tb.cell}_data.hdf5')
             save_sim_results(results, results_dir)
@@ -155,6 +156,8 @@ class TestbenchManager(abc.ABC):
                                        tb_dict=tb_dict, wrapper_dict=wrapper_dict, gen_tb=gen_tb,
                                        gen_wrapper=gen_wrapper, run_sim=run_sim)
         results = batch_async_task([coro])[0]
+        if isinstance(results, Exception):
+            raise results
         return results
 
     def load_results(self, impl_cell, tb_dict):
