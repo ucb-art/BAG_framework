@@ -1,10 +1,11 @@
 from __future__ import annotations
 from typing import (
-    TYPE_CHECKING, Optional, Dict, Any, Type, cast
+    TYPE_CHECKING, Optional, Dict, Any, Type, cast, List
 )
 
 import abc
 from pathlib import Path
+import numpy as np
 
 from ..io.sim_data import load_sim_results, save_sim_results, load_sim_file
 from ..concurrent.core import batch_async_task
@@ -52,7 +53,7 @@ class TestbenchManager(abc.ABC):
         Parameters
         ----------
         tb_params :
-            the testbench schematic parameters.  None means the previous testbench will be reused.
+            the test bench schematic parameters.  None means the previous test bench will be reused.
             This dictionary should not be modified.
 
         Returns
@@ -215,7 +216,7 @@ class MeasurementManager(abc.ABC):
             except KeyError:
                 default_sim_view_list = self.specs.get('sim_view_list', [])
                 if not default_sim_view_list:
-                    view_name = self.specs.get('view_name', 'netlist' if extract else 'schematic')
+                    view_name = 'netlist' if extract else 'schematic'
                     default_sim_view_list.append((impl_cell, view_name))
                 tbm_dict['sim_view_list'] = default_sim_view_list
         if 'sim_envs' not in tbm_dict:
@@ -261,7 +262,7 @@ class MeasurementManager(abc.ABC):
 
     @abc.abstractmethod
     def run_flow(self, bprj: BagProject, impl_lib: str, impl_cell: str,
-                 load_results: bool = False) -> Any:
+                 load_results: bool = False, extract: bool = True) -> Any:
         """
         Defines the FSM in code rather than passing state indicators through a dictionary
         use self.run_tb to orchestrate test benches and modify their parameters if necessary
@@ -278,6 +279,8 @@ class MeasurementManager(abc.ABC):
             DUT implementation cell
         load_results:
             True to load results, this is used when debugging post processing functions
+        extract:
+            True to use post-layout extracted view for simulations
 
         Returns
         -------
@@ -287,9 +290,10 @@ class MeasurementManager(abc.ABC):
         raise NotImplementedError
 
     def measure(self, bprj: BagProject, impl_lib: str, impl_cell: str, load_results: bool = False,
-                gen_wrapper: bool = True, gen_tb: bool = True, run_sims: bool = True) -> Any:
+                gen_wrapper: bool = True, gen_tb: bool = True, run_sims: bool = True,
+                extract: bool = True) -> Any:
         self.gen_wrapper = gen_wrapper
         self.gen_tb = gen_tb
         self.run_sims = run_sims
 
-        return self.run_flow(bprj, impl_lib, impl_cell, load_results)
+        return self.run_flow(bprj, impl_lib, impl_cell, load_results, extract)
