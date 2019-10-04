@@ -70,7 +70,7 @@ class TestbenchManager(abc.ABC):
         if wrapper_dict is None:
             wrapper_dict = tb_dict.pop('wrapper', None)
         has_wrapper = wrapper_dict is not None
-        wrapped_cell = ''
+        wrapper_lib = wrapper_cell = wrapped_cell = wrapper_params = None
         if has_wrapper:
             wrapper_lib = wrapper_dict['wrapper_lib']
             wrapper_cell = wrapper_dict['wrapper_cell']
@@ -89,12 +89,10 @@ class TestbenchManager(abc.ABC):
         tb_name = f'{impl_cell}_{tb_suffix}'
 
         if has_wrapper and gen_wrapper:
-            # noinspection PyUnboundLocalVariable
             print(f'Generating wrapper {impl_lib}_{wrapped_cell}')
-            # noinspection PyUnboundLocalVariable
             master = bprj.create_design_module(lib_name=wrapper_lib, cell_name=wrapper_cell)
-            # noinspection PyUnboundLocalVariable
-            master.design(dut_lib=impl_lib, dut_cell=impl_cell, **wrapper_params)
+            bprj.replace_dut_in_wrapper(wrapper_params, impl_lib, impl_lib)
+            master.design(**wrapper_params)
             master.implement_design(impl_lib, wrapped_cell)
             print('wrapper generated.')
 
