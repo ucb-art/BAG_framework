@@ -1015,7 +1015,8 @@ class BagProject(object):
         mm_cls = _import_class_from_str(mm_cls_str)
         mm: MeasurementManager = mm_cls(root_dir, mm_specs)
         return mm.measure(self, impl_lib, impl_cell, load_results=load_results,
-                          gen_wrapper=gen_wrapper, gen_tb=gen_tb, run_sims=run_sims)
+                          gen_wrapper=gen_wrapper, gen_tb=gen_tb, run_sims=run_sims,
+                          extract=extract)
 
     def create_library(self, lib_name, lib_path=''):
         # type: (str, str) -> None
