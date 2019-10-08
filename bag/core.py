@@ -888,7 +888,7 @@ class BagProject(object):
         if gen_wrapper and has_wrapper:
             print('generating wrapper ...')
             master = self.create_design_module(lib_name=wrapper_lib, cell_name=wrapper_cell)
-            self.replace_dut_in_wrapper(wrapper_params, impl_lib, impl_lib)
+            self.replace_dut_in_wrapper(wrapper_params, impl_lib, impl_cell)
             master.design(**wrapper_params)
             master.implement_design(impl_lib, wrapped_cell)
             print('wrapper generated.')

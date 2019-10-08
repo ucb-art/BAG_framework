@@ -64,7 +64,8 @@ class TestbenchManager(abc.ABC):
         return tb_params
 
     def setup(self, bprj, impl_lib, impl_cell, sim_view_list, env_list,
-              tb_dict, wrapper_dict=None, gen_tb=True, gen_wrapper=True) -> Testbench:
+              tb_dict, wrapper_dict=None, gen_tb=True, gen_wrapper=True,
+              run_sim=True) -> Optional[Testbench]:
         tb_dict = self.pre_setup(tb_dict)
         self._specs = tb_dict
 
@@ -92,15 +93,12 @@ class TestbenchManager(abc.ABC):
         if has_wrapper and gen_wrapper:
             print(f'Generating wrapper {impl_lib}_{wrapped_cell}')
             master = bprj.create_design_module(lib_name=wrapper_lib, cell_name=wrapper_cell)
-            bprj.replace_dut_in_wrapper(wrapper_params, impl_lib, impl_lib)
+            bprj.replace_dut_in_wrapper(wrapper_params, impl_lib, impl_cell)
             master.design(**wrapper_params)
             master.implement_design(impl_lib, wrapped_cell)
             print('wrapper generated.')
 
-        if not gen_tb:
-            print(f'loading testbench {impl_lib}_{tb_name}')
-            tb = bprj.load_testbench(impl_lib, tb_name)
-        else:
+        if gen_tb:
             print(f'Generating testbench {impl_cell}_{tb_name}')
             tb_master = bprj.create_design_module(tb_lib, tb_cell)
             dut_cell = wrapped_cell if has_wrapper else impl_cell
@@ -108,6 +106,12 @@ class TestbenchManager(abc.ABC):
             tb_master.implement_design(impl_lib, tb_name)
             print('testbench generated.')
             tb = bprj.configure_testbench(impl_lib, tb_name)
+        else:
+            if run_sim:
+                print(f'loading testbench {impl_lib}_{tb_name}')
+                tb = bprj.load_testbench(impl_lib, tb_name)
+            else:
+                return None
 
         print(f'Configuring testbench {tb_name}')
 
@@ -138,7 +142,7 @@ class TestbenchManager(abc.ABC):
         tb: Testbench = self.setup(bprj, impl_lib=impl_lib, impl_cell=impl_cell,
                                    sim_view_list=sim_view_list, env_list=env_list,
                                    tb_dict=tb_dict, wrapper_dict=wrapper_dict, gen_tb=gen_tb,
-                                   gen_wrapper=gen_wrapper)
+                                   gen_wrapper=gen_wrapper, run_sim=run_sim)
         if run_sim:
             print(f'Simulating {tb.cell}')
             save_dir = await tb.async_run_simulation()
