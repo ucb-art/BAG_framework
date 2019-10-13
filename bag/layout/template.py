@@ -19,8 +19,8 @@ import yaml
 import shapely.ops as shops
 import shapely.geometry as shgeo
 
-from bag.util.cache import DesignMaster, MasterDB
-from bag.util.interval import IntervalSet
+from ..util.cache import DesignMaster, MasterDB
+from ..util.interval import IntervalSet
 from .core import BagLayout
 from .util import BBox, BBoxArray, tuple2_to_int, tuple2_to_float_int
 from ..io import get_encoding, open_file
