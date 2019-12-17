@@ -148,8 +148,8 @@ class Calibre(VirtuosoChecker):
             return ['%s.spf' % cell_name]
         else:
             return ['%s.pex.netlist' % cell_name,
-                    '%s.pex.netlist.pex' % cell_name,
-                    '%s.pex.netlist.%s.pxi' % (cell_name, cell_name),
+                    # '%s.pex.netlist.pex' % cell_name,
+                    # '%s.pex.netlist.%s.pxi' % (cell_name, cell_name),
                     ]
 
     def setup_lvs_flow(self, lib_name, cell_name, sch_view='schematic', lay_view='layout',
@@ -327,8 +327,11 @@ class Calibre(VirtuosoChecker):
             if not os.path.isfile(result):
                 return None, log_fname
 
-            if self.rcx_mode == 'qrc':
-                test_str = ' terminated normally  *****'
+            if self.rcx_mode in ['qrc', 'pex']:
+                if self.rcx_mode == 'qrc':
+                    test_str = ' terminated normally  *****'
+                else:
+                    test_str = 'xRC Errors  =  0'
                 LogCheck = subprocess.Popen(['grep', '-i', test_str, log_fname], stdout=subprocess.PIPE,
                                             stderr=subprocess.STDOUT)
                 stdout, stderr = LogCheck.communicate()
