@@ -461,6 +461,9 @@ class Calibre(VirtuosoChecker):
         rcx_options['cmnFDILayoutView'] = lay_view
         rcx_options['cmnFDIDEFLayoutPath'] = '%s.def' % cell_name
 
+        rcx_options['pexPexNetlistType'] = rcx_params.pop('netlist_type', 'RCC')
+        rcx_options['pexPexGroundNameValue'] = rcx_params.pop('ground_name_value', 'VSS')
+
         rcx_options.update(rcx_params)
 
         content = ''.join(('*%s: %s\n' % (key, val) for key, val in rcx_options.items()))
