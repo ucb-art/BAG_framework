@@ -10,12 +10,11 @@ import math
 import numpy as np
 from itertools import chain
 
-import bag
-import bag.io
+from .. import io
 from .util import BBox
 from .objects import Rect, Via, ViaInfo, Instance, InstanceInfo, PinInfo
 from .objects import Path, Polygon, Blockage, Boundary
-from bag.util.search import BinaryIterator
+from ..util.search import BinaryIterator
 
 # try to import cybagoa module
 try:
@@ -888,7 +887,7 @@ class TechInfo(object, metaclass=abc.ABCMeta):
 
         Parameters
         ----------
-        bbox : bag.layout.util.BBox
+        bbox : ..layout.util.BBox
             the bounding box of the via.
         bot_layer : Union[str, Tuple[str, str]]
             the bottom layer name, or a tuple of layer name and purpose name.
@@ -927,9 +926,9 @@ class TechInfo(object, metaclass=abc.ABCMeta):
                 The total via array maximum allowable AC peak current, in Amperes.
             params : dict[str, any]
                 A dictionary of via parameters.
-            top_box : bag.layout.util.BBox
+            top_box : ..layout.util.BBox
                 the top via layer bounding box, including extensions.
-            bot_box : bag.layout.util.BBox
+            bot_box : ..layout.util.BBox
                 the bottom via layer bounding box, including extensions.
 
         """
@@ -938,8 +937,8 @@ class TechInfo(object, metaclass=abc.ABCMeta):
             bot_layer = bot_layer[0]
         if isinstance(top_layer, tuple):
             top_layer = top_layer[0]
-        bot_layer = bag.io.fix_string(bot_layer)
-        top_layer = bag.io.fix_string(top_layer)
+        bot_layer = io.fix_string(bot_layer)
+        top_layer = io.fix_string(top_layer)
 
         bot_id = self.get_layer_id(bot_layer)
         bmtype = self.get_layer_type(bot_layer)
@@ -1222,7 +1221,7 @@ class BagLayout(object):
 
     Parameters
     ----------
-    grid : :class:`bag.layout.routing.RoutingGrid`
+    grid : :class:`..layout.routing.RoutingGrid`
         the routing grid instance.
     use_cybagoa : bool
         True to use cybagoa package to accelerate layout.
@@ -1401,7 +1400,7 @@ class BagLayout(object):
         inst_tot_list.extend(inst_prim_list)
 
         if self._use_cybagoa and cybagoa is not None:
-            encoding = bag.io.get_encoding()
+            encoding = io.get_encoding()
             oa_layout = cybagoa.PyLayout(encoding)
 
             for obj in inst_tot_list:
@@ -1433,7 +1432,7 @@ class BagLayout(object):
 
         Parameters
         ----------
-        instance : bag.layout.objects.Instance
+        instance : ..layout.objects.Instance
             the instance to add.
         """
         if self._finalized:
@@ -1556,7 +1555,7 @@ class BagLayout(object):
 
         Parameters
         ----------
-        rect : bag.layout.objects.Rect
+        rect : ..layout.objects.Rect
             the rectangle object to add.
         """
         if self._finalized:
@@ -1625,7 +1624,7 @@ class BagLayout(object):
 
         Parameters
         ----------
-        via : bag.layout.objects.Via
+        via : ..layout.objects.Via
             the via object to add.
         """
         if self._finalized:
@@ -1713,7 +1712,7 @@ class BagLayout(object):
         layer : string or (string, string)
             the layer name, or (layer, purpose) pair.
             if purpose is not specified, defaults to 'pin'.
-        bbox : bag.layout.util.BBox
+        bbox : ..layout.util.BBox
             the rectangle bounding box
         pin_name : str or None
             the pin name.  If None or empty, auto-generate from net name.
@@ -1762,7 +1761,7 @@ class BagLayout(object):
         layer : Union[str, Tuple[str, str]]
             the layer name, or (layer, purpose) pair.
             if purpose is not specified, defaults to 'pin'.
-        bbox : bag.layout.util.BBox
+        bbox : ..layout.util.BBox
             the rectangle bounding box
         """
         if self._finalized:

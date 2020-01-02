@@ -7,8 +7,8 @@ import abc
 from .core import TechInfo
 
 if TYPE_CHECKING:
-    from bag.layout.util import BBox
-    from bag.layout.template import TemplateBase
+    from ..layout.util import BBox
+    from ..layout.template import TemplateBase
 
 
 class TechInfoConfig(TechInfo, metaclass=abc.ABCMeta):

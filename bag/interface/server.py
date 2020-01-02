@@ -24,7 +24,7 @@ and will strip the newline before sending result back to client.
 
 import traceback
 
-import bag.io
+from .. import io
 
 
 def _object_to_skill_file_helper(py_obj, file_obj):
@@ -35,11 +35,11 @@ def _object_to_skill_file_helper(py_obj, file_obj):
     py_obj : any
         the object to convert.
     file_obj : file
-        the file object to write to.  Must be created with bag.io
+        the file object to write to.  Must be created with io
         package so that encodings are handled correctly.
     """
     # fix potential raw bytes
-    py_obj = bag.io.fix_string(py_obj)
+    py_obj = io.fix_string(py_obj)
     if isinstance(py_obj, str):
         # string
         file_obj.write(py_obj)
@@ -83,7 +83,7 @@ def object_to_skill_file(py_obj, file_obj):
     py_obj : any
         the object to convert.
     file_obj : file
-        the file object to write to.  Must be created with bag.io
+        the file object to write to.  Must be created with io
         package so that encodings are handled correctly.
     """
     _object_to_skill_file_helper(py_obj, file_obj)
@@ -105,10 +105,10 @@ class SkillServer(object):
     router : :class:`bag.interface.ZMQRouter`
         the :class:`~bag.interface.ZMQRouter` object used for socket communication.
     virt_in : file
-        the virtuoso input file.  Must be created with bag.io
+        the virtuoso input file.  Must be created with io
         package so that encodings are handled correctly.
     virt_out : file
-        the virtuoso output file.  Must be created with bag.io
+        the virtuoso output file.  Must be created with io
         package so that encodings are handled correctly.
     tmpdir : str or None
         if given, will save all temporary files to this folder.
@@ -122,7 +122,7 @@ class SkillServer(object):
         self.virt_out = virt_out
 
         # create a directory for all temporary files
-        self.dtmp = bag.io.make_temp_dir('skillTmp', parent_dir=tmpdir)
+        self.dtmp = io.make_temp_dir('skillTmp', parent_dir=tmpdir)
 
     def run(self):
         """Starts this server.
@@ -203,7 +203,7 @@ class SkillServer(object):
         fname_dict = {}
         # write input parameters to files
         for key, val in input_files.items():
-            with bag.io.open_temp(prefix=key, delete=False, dir=self.dtmp) as file_obj:
+            with io.open_temp(prefix=key, delete=False, dir=self.dtmp) as file_obj:
                 fname_dict[key] = '"%s"' % file_obj.name
                 # noinspection PyBroadException
                 try:
@@ -216,7 +216,7 @@ class SkillServer(object):
 
         # generate output file
         if out_file:
-            with bag.io.open_temp(prefix=out_file, delete=False, dir=self.dtmp) as file_obj:
+            with io.open_temp(prefix=out_file, delete=False, dir=self.dtmp) as file_obj:
                 fname_dict[out_file] = '"%s"' % file_obj.name
                 out_file = file_obj.name
 
@@ -241,7 +241,7 @@ class SkillServer(object):
         elif out_file:
             # read result from file.
             try:
-                msg = bag.io.read_file(out_file)
+                msg = io.read_file(out_file)
                 data = dict(type='str', data=msg)
             except IOError:
                 stack_trace = traceback.format_exc()
