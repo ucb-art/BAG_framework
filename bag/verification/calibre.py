@@ -331,7 +331,7 @@ class Calibre(VirtuosoChecker):
                 if self.rcx_mode == 'qrc':
                     test_str = ' terminated normally  *****'
                 else:
-                    test_str = 'xRC Errors  =  0'
+                    test_str = ' Errors  =  0'
                 LogCheck = subprocess.Popen(['grep', '-i', test_str, log_fname], stdout=subprocess.PIPE,
                                             stderr=subprocess.STDOUT)
                 stdout, stderr = LogCheck.communicate()
