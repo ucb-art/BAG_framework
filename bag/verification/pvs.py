@@ -173,7 +173,8 @@ class PVS(VirtuosoChecker):
             runset_fname = runset_file.name
             runset_file.write(runset_content)
 
-        cmd = ['pvs', '-perc', '-lvs', '-qrc_data', '-control', runset_fname,
+        num_cores = 4
+        cmd = ['pvs', '-perc', '-lvs', '-qrc_data', '-control', runset_fname, '-dp', str(num_cores),
                '-gds', lay_file, '-layout_top_cell', cell_name,
                '-source_cdl', sch_file, '-source_top_cell', cell_name,
                self.lvs_rule_file,
