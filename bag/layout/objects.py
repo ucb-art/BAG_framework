@@ -494,10 +494,10 @@ class Instance(Arrayable):
         yb = base_box.bottom_unit
         xr = base_box.right_unit
         yt = base_box.top_unit
-        nx0 = int(max(0, -(-(test.left_unit - xr) // inst_spx)))
-        nx1 = int(min(self.nx - 1, (test.right_unit - xl) // inst_spx))
-        ny0 = int(max(0, -(-(test.bottom_unit - yt) // inst_spy)))
-        ny1 = int(min(self.ny - 1, (test.top_unit - yb) // inst_spy))
+        nx0 = max(0, -(-(test.left_unit - xr) // inst_spx))
+        nx1 = min(self.nx - 1, (test.right_unit - xl) // inst_spx)
+        ny0 = max(0, -(-(test.bottom_unit - yt) // inst_spy))
+        ny1 = min(self.ny - 1, (test.top_unit - yb) // inst_spy)
         orient = self._orient
         x0, y0 = self._loc_unit
         if (orient == 'R90' or orient == 'R270' or
