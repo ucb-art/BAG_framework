@@ -537,8 +537,8 @@ class SkillInterface(DbAccess):
                 self._eval_skill(cmd0)
                 cmd0 = 'mgc_eview_globals->createUnmatchedTerminals = t'
                 self._eval_skill(cmd0)
-                cmd0 = 'mgc_eview_globals->preserveDeviceCase = t'
-                self._eval_skill(cmd0)
+                # cmd0 = 'mgc_eview_globals->preserveDeviceCase = t'
+                # self._eval_skill(cmd0)
                 cmd0 = 'mgc_eview_globals->devicePlacementArrayed = t'
                 self._eval_skill(cmd0)
                 cmd0 = 'mgc_eview_globals->showCalviewDlg = nil'
