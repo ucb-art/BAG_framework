@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Optional, List, Tuple, Dict, Any, Sequence
 
 import os
 import subprocess
+import shutil
 
 from .virtuoso import VirtuosoChecker
 from ..io import read_file, open_temp, readlines_iter
@@ -298,6 +299,11 @@ class Calibre(VirtuosoChecker):
             with open_temp(dir=run_dir, delete=False) as runset_file:
                 runset_fname = runset_file.name
                 runset_file.write(runset_content)
+
+            # remove old svdb directory
+            svdb_dir = os.path.join(run_dir, 'svdb')
+            if os.path.exists(svdb_dir) and os.path.isdir(svdb_dir):
+                shutil.rmtree(svdb_dir)
 
             cmd = ['calibre', '-gui', '-pex', '-runset', runset_fname, '-batch']
         else:
