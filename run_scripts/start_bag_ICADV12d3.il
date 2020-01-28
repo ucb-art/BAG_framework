@@ -555,9 +555,9 @@ procedure( update_schematic_pin(cvid pin_map new_pins ipin opin iopin "glllll")
         ; add new pins
         when( new_pins
             ; get location for new pins
-            npin_xl = xCoord(car(pin_xy_info))
+            npin_xl = xCoord(car(pin_xy_info)) - 2 * snap_dist
             npin_yl = yCoord(car(pin_xy_info)) - 2 * snap_dist
-            npin_xr = xCoord(cadr(pin_xy_info))
+            npin_xr = xCoord(cadr(pin_xy_info)) 
             npin_yr = yCoord(cadr(pin_xy_info)) - 2 * snap_dist
             foreach( npin_info new_pins
                 npin_name = car(npin_info)
@@ -1185,15 +1185,21 @@ procedure( create_path_seg_helper(cv lay p0 p1 width start_s end_s)
             diag_ext = width * sqrt(2) / 2
         )
 
-        bext = 0
-        eext = 0
-        when( start_s == "round"
-            bext = width / 2
+        bext = width/2
+        eext = width/2
+        if( start_s == "round" then
             start_s = "custom"
+        else
+            when( start_s == "truncate"
+                bext = 0
+            )
         )
-        when( end_s == "round"
-            eext = width / 2
+        if( end_s == "round" then
             end_s = "custom"
+        else
+            when( end_s == "truncate"
+                eext = 0
+            )
         )
         info_list = list(bext eext list(diag_ext diag_ext width/2 diag_ext diag_ext width/2))
         dbCreatePathSeg(cv lay p0 p1 width start_s end_s info_list)

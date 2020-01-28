@@ -1705,7 +1705,7 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
                 cur_w = self.grid.get_track_width(layer_id, warr.track_id.width, unit_mode=True)
                 wl = warr.lower_unit
                 wu = warr.upper_unit
-                pin_len = min(cur_w * 2, wu - wl)
+                pin_len = min(cur_w * 6, wu - wl)
                 if edge_mode < 0:
                     wu = wl + pin_len
                 else:
@@ -3328,7 +3328,7 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
         if num_pitch_2 % 2 == 0:
             num_pitch = num_pitch_2 // 2  # type: Union[float, int]
         else:
-            num_pitch = num_pitch_2 / 2
+            num_pitch = num_pitch_2 / 2 # type: Union[float, int]
         # convert width
         if tr_w < 0:
             width_unit = int(self.grid.get_track_width(wire_layer, wire_tid.width, unit_mode=True))
@@ -3642,7 +3642,9 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
         grid = self.grid
         res = grid.resolution
 
-        for bwarr in bot_warr_list:
+        bwarr_conn_made_list= [False for bwarr in bot_warr_list]
+
+        for bwarr_indx, bwarr in enumerate(bot_warr_list):
             bot_tl = bwarr.lower_unit
             bot_tu = bwarr.upper_unit
             bot_track_idx = bwarr.track_id
@@ -3675,6 +3677,10 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
                                     box = BBox(btl, ttl, btu, ttu, res, unit_mode=True)
                                 top_lay_name = self.grid.get_layer_name(top_layer_id, top_index)
                                 self.add_via(box, bot_lay_name, top_lay_name, bot_dir)
+
+                                bwarr_conn_made_list[bwarr_indx] = True
+
+        return bwarr_conn_made_list
 
     def mark_bbox_used(self, layer_id, bbox):
         # type: (int, BBox) -> None
@@ -3720,6 +3726,8 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
                       flip=False,  # type: bool
                       unit_mode=False,  # type: bool
                       sup_type='both',  # type: str
+                      vss_only=False, # type: bool
+                      vdd_only=False, # type: bool
                       ):
         # type: (...) -> Tuple[List[WireArray], List[WireArray]]
         """Draw power fill on the given layer."""
@@ -3769,14 +3777,20 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
         for ncur in range(n0, n1 + 1):
             tr_idx = (htr0 + ncur * htr_pitch - 1) / 2
             tid = TrackID(layer_id, tr_idx, width=fill_width)
-            if sup_type.lower() == 'vss':
-                cur_list = top_vss
-            elif sup_type.lower() == 'vdd':
-                cur_list = top_vdd
-            elif sup_type.lower() == 'both':
-                cur_list = top_vss if (ncur % 2 == 0) != flip else top_vdd
+            # Two options for legacy support
+            if vss_only or vdd_only:
+                if vss_only and vdd_only:
+                    raise ValueError("only one of 'vss_only' and 'vdd_only' could be True.")
+                cur_list = top_vss if vss_only else top_vdd
             else:
-                raise ValueError('sup_type has to be "VDD" or "VSS" or "both"(default)')
+                if sup_type.lower() == 'vss':
+                    cur_list = top_vss
+                elif sup_type.lower() == 'vdd':
+                    cur_list = top_vdd
+                elif sup_type.lower() == 'both':
+                    cur_list = top_vss if (ncur % 2 == 0) != flip else top_vdd
+                else:
+                    raise ValueError('sup_type has to be "VDD" or "VSS" or "both"(default)')
             for tl, tu in self.open_interval_iter(tid, lower, upper, sp=space, sp_le=space_le,
                                                   min_len=min_len):
                 cur_list.append(WireArray(tid, tl, tu, res=res, unit_mode=True))

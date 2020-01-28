@@ -331,7 +331,7 @@ class Calibre(VirtuosoChecker):
                 if self.rcx_mode == 'qrc':
                     test_str = ' terminated normally  *****'
                 else:
-                    test_str = 'xRC Errors  =  0'
+                    test_str = ' Errors  =  0'
                 LogCheck = subprocess.Popen(['grep', '-i', test_str, log_fname], stdout=subprocess.PIPE,
                                             stderr=subprocess.STDOUT)
                 stdout, stderr = LogCheck.communicate()
@@ -460,6 +460,9 @@ class Calibre(VirtuosoChecker):
         rcx_options['cmnFDILayoutLibrary'] = lib_name
         rcx_options['cmnFDILayoutView'] = lay_view
         rcx_options['cmnFDIDEFLayoutPath'] = '%s.def' % cell_name
+
+        rcx_options['pexPexNetlistType'] = rcx_params.pop('netlist_type', 'RCC')
+        rcx_options['pexPexGroundNameValue'] = rcx_params.pop('ground_name_value', 'VSS')
 
         rcx_options.update(rcx_params)
 
