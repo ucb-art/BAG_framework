@@ -543,7 +543,7 @@ class Calibre(VirtuosoChecker):
                                               dict(
                                                   cell_name=cell_name,
                                                   query_input=query_input,
-                                                  extract_type=starrc_params['extract'].get('type'),
+                                                  extract_type=starrc_params['extract'].get('type', 'RCc'),
                                                   netlist_format=starrc_params.get('netlist_format',
                                                                                    'SPF'),
                                                   sch_file=sch_file,
@@ -587,6 +587,7 @@ class Calibre(VirtuosoChecker):
                                                   cell_name=cell_name,
                                                   netlist_format=qrc_params.get('netlist_format',
                                                                                 'spf'),
+                                                  extract_type=qrc_params['extract'].get('type', 'rc_coupled'),
                                                   sch_file=sch_file,
                                                   cds_lib=cds_lib_path,
                                                   skew=qrc_params.get('skew', 'tt'),
