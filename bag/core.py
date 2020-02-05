@@ -533,6 +533,24 @@ class BagProject(object):
         new_lib_path = self.bag_config['new_lib_path']
         self.impl_db.import_design_library(lib_name, self.dsn_db, new_lib_path)
 
+    def import_sch_cellview(self, lib_name: str, cell_name: str) -> None:
+        """Import the given schematic and symbol template into Python.
+
+        This import process is done recursively.
+
+        Parameters
+        ----------
+        lib_name : str
+            library name.
+        cell_name : str
+            cell name.
+        """
+        if self.impl_db is None:
+            raise Exception('BAG Server is not set up.')
+
+        new_lib_path = self.bag_config['new_lib_path']
+        self.impl_db.import_sch_cellview(lib_name, cell_name, self.dsn_db, new_lib_path)
+
     def get_cells_in_library(self, lib_name):
         # type: (str) -> Sequence[str]
         """Get a list of cells in the given library.
@@ -712,28 +730,35 @@ class BagProject(object):
         if run_lvs:
             print('running lvs...')
             lvs_passed, lvs_log = self.run_lvs(impl_lib, impl_cell, gds_lay_file=gds_lay_file)
-            print('LVS log: %s' % lvs_log)
             if lvs_passed:
                 print('LVS passed!')
                 result = dict(log='')
             else:
-                print('LVS failed...')
-                result = dict(log=lvs_log)
+                raise ValueError(f'LVS failed, lvs_log: {lvs_log}')
 
         if run_rcx and ((run_lvs and lvs_passed) or not run_lvs):
             print('running rcx...')
             rcx_passed, rcx_log = self.run_rcx(impl_lib, impl_cell)
-            print('RCX log: %s' % rcx_log)
             if rcx_passed:
                 print('RCX passed!')
                 result = dict(log='')
             else:
-                print('RCX failed...')
-                result = dict(log=rcx_log)
+                raise ValueError(f'RCX failed, rcx_log: {rcx_log}')
 
         if result_pstat:
             return result_pstat
         return result
+
+    def replace_dut_in_wrapper(self, params: Dict[str, Any], dut_lib: str,
+                               dut_cell: str) -> None:
+        # helper function that replaces dut_lib and dut_cell in the wrapper recursively base on
+        # dut_params
+        dut_params = params.get('dut_params', None)
+        if dut_params is None:
+            params['dut_lib'] = dut_lib
+            params['dut_cell'] = dut_cell
+            return
+        return self.replace_dut_in_wrapper(dut_params, dut_lib, dut_cell)
 
     def simulate_cell(self,
                       specs: Dict[str, Any],
@@ -805,13 +830,13 @@ class BagProject(object):
             tbm: TestbenchManager = tbm_cls(root_dir)
             sim_view_list = tbm_specs.get('sim_view_list', [])
             if not sim_view_list:
-                # TODO: Is netlist always the right keyword?
-                view_name = tbm_specs.get('view_name', 'netlist' if extract else 'schematic')
+                view_name = 'netlist' if extract else 'schematic'
                 sim_view_list.append((impl_cell, view_name))
             sim_envs = tbm_specs['sim_envs']
 
             if load_results:
                 return tbm.load_results(impl_cell, tbm_specs)
+
             results = tbm.simulate(bprj=self,
                                    impl_lib=impl_lib,
                                    impl_cell=impl_cell,
@@ -831,7 +856,7 @@ class BagProject(object):
         if gen_wrapper and not has_wrapper:
             raise ValueError('must provide a wrapper in sim_params')
 
-        wrapped_cell = ''
+        wrapper_lib = wrapper_cell = wrapped_cell = wrapper_params = None
         if has_wrapper:
             wrapper_lib = wrapper['wrapper_lib']
             wrapper_cell = wrapper['wrapper_cell']
@@ -862,10 +887,9 @@ class BagProject(object):
 
         if gen_wrapper and has_wrapper:
             print('generating wrapper ...')
-            # noinspection PyUnboundLocalVariable
             master = self.create_design_module(lib_name=wrapper_lib, cell_name=wrapper_cell)
-            # noinspection PyUnboundLocalVariable
-            master.design(dut_lib=impl_lib, dut_cell=impl_cell, **wrapper_params)
+            self.replace_dut_in_wrapper(wrapper_params, impl_lib, impl_cell)
+            master.design(**wrapper_params)
             master.implement_design(impl_lib, wrapped_cell)
             print('wrapper generated.')
 
@@ -878,17 +902,10 @@ class BagProject(object):
             print('testbench generated.')
 
         if run_sim:
-            print('seting up ADEXL ...')
-            # TODO: when running simulations directly (not through tb_manager), sim_view_list is
-            #  not supported
-            # TODO: netlist might not be always the right keyword.
-            # something like:
-            # view_name = self.get_proper_view_name if extract else 'netlist'
-
+            print('setting up ADEXL ...')
             sim_view_list = sim_params.get('sim_view_list', [])
             if not sim_view_list:
-                # TODO: Is netlist always the right keyword?
-                view_name = sim_params.get('view_name', 'netlist' if extract else 'schematic')
+                view_name = 'netlist' if extract else 'schematic'
                 sim_view_list.append((impl_cell, view_name))
 
             sim_envs = sim_params['sim_envs']
@@ -904,14 +921,14 @@ class BagProject(object):
 
             # set sweep parameters
             for key, val in sim_swp_params.items():
-                tb.set_sweep_parameter(key, values=val)
+                tb.set_sweep_parameter(key, **val)
 
             # set the simulation outputs
             for key, val in sim_outputs.items():
                 tb.add_output(key, val)
 
             # change the view_name (netlist or schematic)
-            for cell, view in sim_view_list.items():
+            for cell, view in sim_view_list:
                 tb.set_simulation_view(impl_lib, cell, view)
 
             tb.set_simulation_environments(sim_envs)
@@ -922,6 +939,9 @@ class BagProject(object):
             print('simulation done.')
             print('loading results ...')
             results = sim_data.load_sim_results(tb.save_dir)
+            if not results.get('sweep_params', {}):
+                raise ValueError(f'results are empty, either you forgot to specify outputs, or '
+                                 f'simulation failed. check sim_log: {tb.save_dir}/ocn_output.log')
             print('results loaded.')
             print('saving results into hdf5')
             sim_data.save_sim_results(results, tb_fname)
@@ -995,7 +1015,8 @@ class BagProject(object):
         mm_cls = _import_class_from_str(mm_cls_str)
         mm: MeasurementManager = mm_cls(root_dir, mm_specs)
         return mm.measure(self, impl_lib, impl_cell, load_results=load_results,
-                          gen_wrapper=gen_wrapper, gen_tb=gen_tb, run_sims=run_sims)
+                          gen_wrapper=gen_wrapper, gen_tb=gen_tb, run_sims=run_sims,
+                          extract=extract)
 
     def create_library(self, lib_name, lib_path=''):
         # type: (str, str) -> None

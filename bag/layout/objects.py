@@ -12,7 +12,7 @@ from copy import deepcopy
 from .util import transform_table, BBox, BBoxArray, transform_point, get_inverse_transform
 from .routing.base import Port, WireArray
 
-import bag.io
+from .. import io
 
 if TYPE_CHECKING:
     from .template import TemplateBase
@@ -924,7 +924,7 @@ class Rect(Arrayable):
     layer : string or (string, string)
         the layer name, or a tuple of layer name and purpose name.
         If pupose name not given, defaults to 'drawing'.
-    bbox : bag.layout.util.BBox or bag.layout.util.BBoxArray
+    bbox : ..layout.util.BBox or ..layout.util.BBoxArray
         the base bounding box.  If this is a BBoxArray, the BBoxArray's
         arraying parameters are used.
     nx : int
@@ -941,7 +941,7 @@ class Rect(Arrayable):
 
     def __init__(self, layer, bbox, nx=1, ny=1, spx=0, spy=0, unit_mode=False):
         # python 2/3 compatibility: convert raw bytes to string.
-        layer = bag.io.fix_string(layer)
+        layer = io.fix_string(layer)
         if isinstance(layer, str):
             layer = (layer, 'drawing')
         self._layer = layer[0], layer[1]
@@ -960,7 +960,7 @@ class Rect(Arrayable):
 
         Returns
         -------
-        barr : :class:`bag.layout.util.BBoxArray`
+        barr : :class:`..layout.util.BBoxArray`
             the BBoxArray representing this (Arrayed) rectangle.
         """
         return BBoxArray(self._bbox, nx=self.nx, ny=self.ny,
@@ -976,7 +976,7 @@ class Rect(Arrayable):
         """Sets the rectangle layer."""
         self.check_destroyed()
         # python 2/3 compatibility: convert raw bytes to string.
-        val = bag.io.fix_string(val)
+        val = io.fix_string(val)
         if isinstance(val, str):
             val = (val, 'drawing')
         self._layer = val[0], val[1]
@@ -1090,7 +1090,7 @@ class Path(Figure):
                  unit_mode=False,  # type: bool
                  ):
         # type: (...) -> None
-        layer = bag.io.fix_string(layer)
+        layer = io.fix_string(layer)
         Figure.__init__(self, resolution)
         if isinstance(layer, str):
             layer = (layer, 'drawing')
@@ -1404,7 +1404,7 @@ class Polygon(Figure):
                  ):
         # type: (...) -> None
         Figure.__init__(self, resolution)
-        layer = bag.io.fix_string(layer)
+        layer = io.fix_string(layer)
         if isinstance(layer, str):
             layer = (layer, 'drawing')
         self._layer = layer
@@ -1670,9 +1670,9 @@ class Via(Arrayable):
 
     Parameters
     ----------
-    tech : bag.layout.core.TechInfo
+    tech : ..layout.core.TechInfo
         the technology class used to calculate via information.
-    bbox : bag.layout.util.BBox or bag.layout.util.BBoxArray
+    bbox : ..layout.util.BBox or ..layout.util.BBoxArray
         the via bounding box, not including extensions.
         If this is a BBoxArray, the BBoxArray's arraying parameters are used.
     bot_layer : str or (str, str)
@@ -1712,8 +1712,8 @@ class Via(Arrayable):
                                unit_mode=unit_mode)
 
         # python 2/3 compatibility: convert raw bytes to string.
-        bot_layer = bag.io.fix_string(bot_layer)
-        top_layer = bag.io.fix_string(top_layer)
+        bot_layer = io.fix_string(bot_layer)
+        top_layer = io.fix_string(top_layer)
 
         if isinstance(bot_layer, str):
             bot_layer = (bot_layer, 'drawing')
@@ -1805,7 +1805,7 @@ class Via(Arrayable):
 
         Returns
         -------
-        barr : :class:`bag.layout.util.BBoxArray`
+        barr : :class:`..layout.util.BBoxArray`
             the BBoxArray representing this (Arrayed) rectangle.
         """
         return BBoxArray(self._bbox, nx=self.nx, ny=self.ny, spx=self.spx_unit,

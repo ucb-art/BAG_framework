@@ -1,6 +1,7 @@
 import argparse
 from argparse import Namespace
 from pathlib import Path
+import pdb
 
 from bag.io.file import Pickle, Yaml
 from bag.core import BagProject
@@ -28,9 +29,10 @@ def parse_args() -> Namespace:
                         default=True, help='run simulation, --load has a priority over this')
     parser.add_argument('--format', default='yaml',
                         help='format of spec file (yaml, json, pickle)')
-    parser.add_argument('-dump', '--dump', default='',
-                        help='If given will dump output of script into that '
-                             'file according to the format specified')
+    parser.add_argument('-dump', '--dump', default='', help='output will be dumped to this path, '
+                                                            'according to the format specified')
+    parser.add_argument('--pause', default=False, action='store_true',
+                        help='True to pause using pdb.set_trace() after simulation is done')
     args = parser.parse_args()
     return args
 
@@ -47,6 +49,9 @@ def run_main(prj: BagProject, args: Namespace):
                                 load_results=args.load_results,
                                 extract=args.extract,
                                 run_sim=args.run_sim)
+
+    if args.pause:
+        pdb.set_trace()
 
     if results is not None and args.dump:
         out_tmp_file = Path(args.dump)

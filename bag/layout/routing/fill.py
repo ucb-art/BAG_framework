@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Optional, Union, List, Tuple, Any, Generator
 
 from rtree.index import Index, Property
 
-from bag.layout.util import BBox
-from bag.util.search import BinaryIterator, minimize_cost_golden
+from ...layout.util import BBox
+from ...util.search import BinaryIterator, minimize_cost_golden
 
 if TYPE_CHECKING:
-    from bag.layout.util import BBoxArray
+    from ...layout.util import BBoxArray
 
     from .grid import RoutingGrid
 
