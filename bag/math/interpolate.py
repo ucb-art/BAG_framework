@@ -257,7 +257,7 @@ class LinearInterpolator(DiffFunction):
             new_values = np.sum(area, axis=-1)  # type: np.multiarray.ndarray
         else:
             # just use trapezoid integration
-            new_values = np.trapz(values, x=integ_x, axis=axis)
+            new_values = np.trapz(values, x=integ_x, axis=axis)  # type: np.multiarray.ndarray
 
         if not raw and new_points:
             return LinearInterpolator(new_points, new_values, new_deltas, extrapolate=self._extrapolate)
