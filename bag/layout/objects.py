@@ -1233,9 +1233,10 @@ class PathCollection(Figure):
         paths in this collection.
     """
 
-    def __init__(self, resolution, paths):
+    def __init__(self, resolution, paths, poly_paths = None):
         Figure.__init__(self, resolution)
         self._paths = paths
+        self._poly_paths = poly_paths
 
     def move_by(self, dx=0, dy=0, unit_mode=False):
         # type: (ldim, ldim, bool) -> None
@@ -1314,23 +1315,27 @@ class TLineBus(PathCollection):
         for w0, w1, sp in zip(self._widths, self._widths[1:], self._spaces):
             delta_list.append(delta_list[-1] + sp + ((w0 + w1) // 2))
 
-        print(tot_width)
-        print(self._widths)
-        print(self._spaces)
-        print(delta_list)
+        # print(tot_width)
+        # print(self._widths)
+        # print(self._spaces)
+        # print(delta_list)
 
         paths = self.create_paths(delta_list, resolution)
-        PathCollection.__init__(self, resolution, paths)
+        poly_paths = self.create_poly_paths(delta_list, resolution)
+        PathCollection.__init__(self, resolution, paths, poly_paths)
 
     def paths_iter(self):
         return iter(self._paths)
+
+    def poly_paths_iter(self):
+        return iter(self._poly_paths)
 
     def create_paths(self, delta_list, res):
         npoints = len(self._points)
         npaths = len(self._widths)
         path_points = [[] for _ in range(npaths)]
 
-        print(self._points)
+        #print(self._points)
         # add first point
         p0 = self._points[0, :]
         s0 = self._points[1, :] - p0
@@ -1372,11 +1377,330 @@ class TLineBus(PathCollection):
             tmp = p1 + d0 * int(round(delta / s0_norm))
             path.append((tmp[0], tmp[1]))
 
-        print(path_points)
+        #print(path_points)
 
         paths = [Path(res, self._layer, w, pp, end_style=self._end_style,
                       join_style='round', unit_mode=True)
                  for w, pp in zip(self._widths, path_points)]
+        return paths
+
+
+    def create_poly_paths(self, delta_list, res):
+        npoints = len(self._points)
+        npaths = len(self._widths)
+        path_points = [[] for _ in range(npaths)]
+
+        #print(self._points)
+        # add first point
+        p0 = self._points[0, :]
+        s0 = self._points[1, :] - p0
+        s0 //= np.amax(np.absolute(s0))
+        s0_norm = np.linalg.norm(s0)
+        d0 = np.array([-s0[1], s0[0]])
+        for path, delta in zip(path_points, delta_list):
+            tmp = p0 + d0 * int(round(delta / s0_norm))
+            path.append((tmp[0], tmp[1]))
+
+        # add intermediate points
+        for last_idx in range(2, npoints):
+            p1 = self._points[last_idx - 1, :]
+            p0 = self._points[last_idx - 2, :]
+            s0 = p1 - p0
+            s1 = self._points[last_idx, :] - p1
+            s0 //= np.amax(np.absolute(s0))
+            s1 //= np.amax(np.absolute(s1))
+            s0_norm = np.linalg.norm(s0)
+            s1_norm = np.linalg.norm(s1)
+            dir0 = np.array([-s0[1], s0[0]])
+            dir1 = np.array([-s1[1], s1[0]])
+            for path, delta in zip(path_points, delta_list):
+                d0 = p0 + dir0 * int(round(delta / s0_norm))
+                d1 = p1 + dir1 * int(round(delta / s1_norm))
+                a = np.array([[-s1[1], s1[0]],
+                              [s0[1], s0[0]]], dtype=int) // (s0[1] * s1[0] - s0[0] * s1[1])
+                sol = np.dot(a, d1 - d0)
+                tmp = sol[0] * s0 + d0
+                path.append((tmp[0], tmp[1]))
+
+        # add last points
+        p1 = self._points[-1, :]
+        s0 = p1 - self._points[-2, :]
+        s0 //= np.amax(np.absolute(s0))
+        s0_norm = np.linalg.norm(s0)
+        d0 = np.array([-s0[1], s0[0]])
+        for path, delta in zip(path_points, delta_list):
+            tmp = p1 + d0 * int(round(delta / s0_norm))
+            path.append((tmp[0], tmp[1]))
+
+        #print(path_points)
+        
+        path_polygons_points=[]
+        for w, pp in zip(self._widths, path_points):
+
+            pright = []
+            pleft = []
+            for point_index in range(0,len(pp)-1):
+                p0_x = pp[point_index][0]
+                p0_y = pp[point_index][1]
+                p1_x = pp[point_index+1][0]
+                p1_y = pp[point_index+1][1]
+
+                if p0_x == p1_x:
+                    #Vert
+                    if p1_y > p0_y:
+                        #print('up')
+                        p0_x_right  = p0_x + w //2
+                        p0_y_right  = p0_y
+                        p0_x_left   = p0_x - w //2
+                        p0_y_left   = p0_y                    
+                        p1_x_right  = p1_x + w //2
+                        p1_y_right  = p1_y
+                        p1_x_left   = p1_x - w //2
+                        p1_y_left   = p1_y        
+                    else:
+                        #print('down')
+                        p0_x_right  = p0_x - w //2
+                        p0_y_right  = p0_y
+                        p0_x_left   = p0_x + w //2
+                        p0_y_left   = p0_y                    
+                        p1_x_right  = p1_x - w //2
+                        p1_y_right  = p1_y
+                        p1_x_left   = p1_x + w //2
+                        p1_y_left   = p1_y        
+                                            
+                    
+                elif p0_y == p1_y:
+                    #horz
+                    if p1_x > p0_x:
+                        #print('right')
+                        p0_x_right  = p0_x 
+                        p0_y_right  = p0_y - w //2
+                        p0_x_left   = p0_x 
+                        p0_y_left   = p0_y + w //2                  
+                        p1_x_right  = p1_x 
+                        p1_y_right  = p1_y - w //2
+                        p1_x_left   = p1_x 
+                        p1_y_left   = p1_y + w //2 
+                    else:
+                        #print('left')
+                        p0_x_right  = p0_x 
+                        p0_y_right  = p0_y + w //2
+                        p0_x_left   = p0_x 
+                        p0_y_left   = p0_y - w //2                  
+                        p1_x_right  = p1_x 
+                        p1_y_right  = p1_y + w //2
+                        p1_x_left   = p1_x 
+                        p1_y_left   = p1_y - w //2  
+                         
+                    
+                else:
+                    
+                    if (point_index == 0):
+                        pP_x = None
+                        pP_y = None
+                    else:
+                        pP_x = pp[point_index-1][0]
+                        pP_y = pp[point_index-1][1]
+                        
+                    if (point_index == len(pp)-2):
+                        pN_x = None
+                        pN_y = None
+                    else:
+                        pN_x = pp[point_index+2][0]
+                        pN_y = pp[point_index+2][1]
+                    
+                    if p1_y > p0_y and p1_x > p0_x:
+
+                        #print('up and right')
+                        if pP_y is None:
+                            p0_x_right  = p0_x + 2*int(np.floor((.5/np.sqrt(2))*(w // 2))) 
+                            p0_y_right  = p0_y - 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p0_x_left   = p0_x - 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p0_y_left   = p0_y + 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))  
+                        elif pP_y != p0_y:
+                            #from right
+                            p0_x_right  = p0_x + w //2
+                            p0_y_right  = p0_y - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p0_x_left   = p0_x - w //2
+                            p0_y_left   = p0_y + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))  
+                        else:
+                            #from up
+                            p0_x_right  = p0_x + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p0_y_right  = p0_y - w //2
+                            p0_x_left   = p0_x - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p0_y_left   = p0_y + w //2  
+                               
+                        if pN_y is None:
+                            p1_x_right  = p1_x + 2*int(np.floor((.5/np.sqrt(2))*(w // 2))) 
+                            p1_y_right  = p1_y - 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p1_x_left   = p1_x - 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p1_y_left   = p1_y + 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))  
+                        elif pN_y != p1_y:
+                            #to right
+                            p1_x_right  = p1_x + w //2
+                            p1_y_right  = p1_y - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p1_x_left   = p1_x - w //2
+                            p1_y_left   = p1_y + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))                                      
+                        else:
+                            #to up
+                            p1_x_right  = p1_x + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p1_y_right  = p1_y - w //2
+                            p1_x_left   = p1_x - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p1_y_left   = p1_y + w //2                               
+                            
+                    elif p1_y < p0_y and p1_x > p0_x:
+
+                        #print('down and right')
+                        if pP_y is None:
+                            p0_x_right  = p0_x - 2*int(np.floor((.5/np.sqrt(2))*(w // 2))) 
+                            p0_y_right  = p0_y - 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p0_x_left   = p0_x + 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p0_y_left   = p0_y + 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))  
+                        elif pP_y != p0_y:
+                            #from right
+                            p0_x_right  = p0_x - w //2
+                            p0_y_right  = p0_y - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p0_x_left   = p0_x + w //2
+                            p0_y_left   = p0_y + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))  
+                        else:
+                            #from up
+                            p0_x_right  = p0_x - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p0_y_right  = p0_y - w //2
+                            p0_x_left   = p0_x + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p0_y_left   = p0_y + w //2  
+                               
+                        if pN_y is None:
+                            p1_x_right  = p1_x - 2*int(np.floor((.5/np.sqrt(2))*(w // 2))) 
+                            p1_y_right  = p1_y - 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p1_x_left   = p1_x + 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p1_y_left   = p1_y + 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))  
+                        elif pN_y != p1_y:
+                            #to right
+                            p1_x_right  = p1_x - w //2
+                            p1_y_right  = p1_y - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p1_x_left   = p1_x + w //2
+                            p1_y_left   = p1_y + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))                                      
+                        else:
+                            #to up
+                            p1_x_right  = p1_x - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p1_y_right  = p1_y - w //2
+                            p1_x_left   = p1_x + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p1_y_left   = p1_y + w //2   
+                                            
+                    elif p1_y < p0_y and p1_x < p0_x:
+
+                        #print('down and left')
+                        if pP_y is None:
+                            p0_x_right  = p0_x - 2*int(np.floor((.5/np.sqrt(2))*(w // 2))) 
+                            p0_y_right  = p0_y + 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p0_x_left   = p0_x + 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p0_y_left   = p0_y - 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))  
+                        elif pP_y != p0_y:
+                            #from right
+                            p0_x_right  = p0_x - w //2
+                            p0_y_right  = p0_y + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p0_x_left   = p0_x + w //2
+                            p0_y_left   = p0_y - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))  
+                        else:
+                            #from up
+                            p0_x_right  = p0_x - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p0_y_right  = p0_y + w //2
+                            p0_x_left   = p0_x + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p0_y_left   = p0_y - w //2  
+                               
+                        if pN_y is None:
+                            p1_x_right  = p1_x - 2*int(np.floor((.5/np.sqrt(2))*(w // 2))) 
+                            p1_y_right  = p1_y + 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p1_x_left   = p1_x + 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p1_y_left   = p1_y - 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))  
+                        elif pN_y != p1_y:
+                            #to right
+                            p1_x_right  = p1_x - w //2
+                            p1_y_right  = p1_y + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p1_x_left   = p1_x + w //2
+                            p1_y_left   = p1_y - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))                                      
+                        else:
+                            #to up
+                            p1_x_right  = p1_x - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p1_y_right  = p1_y + w //2
+                            p1_x_left   = p1_x + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p1_y_left   = p1_y - w //2   
+
+                    elif p1_y > p0_y and p1_x < p0_x:
+                    
+                        #print('up and left')
+                        if pP_y is None:
+                            p0_x_right  = p0_x + 2*int(np.floor((.5/np.sqrt(2))*(w // 2))) 
+                            p0_y_right  = p0_y + 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p0_x_left   = p0_x - 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p0_y_left   = p0_y - 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))  
+                        elif pP_y != p0_y:
+                            #from right
+                            p0_x_right  = p0_x + w //2
+                            p0_y_right  = p0_y + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p0_x_left   = p0_x - w //2
+                            p0_y_left   = p0_y - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))  
+                        else:
+                            #from up
+                            p0_x_right  = p0_x + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p0_y_right  = p0_y + w //2
+                            p0_x_left   = p0_x - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p0_y_left   = p0_y - w //2  
+                               
+                        if pN_y is None:
+                            p1_x_right  = p1_x + 2*int(np.floor((.5/np.sqrt(2))*(w // 2))) 
+                            p1_y_right  = p1_y + 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p1_x_left   = p1_x - 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))
+                            p1_y_left   = p1_y - 2*int(np.floor((.5/np.sqrt(2))*(w // 2)))  
+                        elif pN_y != p1_y:
+                            #to right
+                            p1_x_right  = p1_x + w //2
+                            p1_y_right  = p1_y + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p1_x_left   = p1_x - w //2
+                            p1_y_left   = p1_y - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))                                      
+                        else:
+                            #to up
+                            p1_x_right  = p1_x + 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p1_y_right  = p1_y + w //2
+                            p1_x_left   = p1_x - 2*int(np.floor( .5*(np.tan(np.pi/8)) * (w // 2) ))
+                            p1_y_left   = p1_y - w //2   
+                           
+                    else:
+                        raise RuntimeError
+
+
+                # if (p0_x_right%2==1) or (p0_y_right%2==1) or (p0_x_left%2==1) or (p0_y_left%2==1) or \
+                #         (p1_x_right%2==1) or (p1_y_right%2==1) or (p1_x_left%2==1) or (p1_y_left%2==1):
+                #     pdb.set_trace()
+
+                pright.append( ( p0_x_right, p0_y_right) )
+                pleft.append( ( p0_x_left, p0_y_left) )
+                pright.append( ( p1_x_right, p1_y_right) )
+                pleft.append(  ( p1_x_left , p1_y_left) )
+
+
+            current_path_polygons_points = pright + pleft[::-1]
+
+            current_path_polygons_array = np.array(current_path_polygons_points)
+
+            current_path_diff = np.diff(np.diff(current_path_polygons_array,axis=0),axis=0)
+            current_path_diff_x = current_path_diff[:,0]
+            current_path_diff_x_0_ind = np.where(current_path_diff_x == 0)[0] + 1
+            current_path_polygons_array = np.delete(current_path_polygons_array, current_path_diff_x_0_ind,axis=0)
+
+            current_path_diff = np.diff(np.diff(current_path_polygons_array,axis=0),axis=0)
+            current_path_diff_y = current_path_diff[:,1]
+            current_path_diff_y_0_ind = np.where(current_path_diff_y == 0)[0] + 1
+            current_path_polygons_array = np.delete(current_path_polygons_array, current_path_diff_y_0_ind,axis=0)
+
+
+            current_path_polygons_points = [(np_point[0],np_point[1]) for np_point in current_path_polygons_array.tolist()]
+
+            
+            path_polygons_points.append(current_path_polygons_points)
+            
+        paths = [Polygon(res, self._layer, pp ,unit_mode=True) for pp in path_polygons_points]
+
         return paths
 
 

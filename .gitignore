@@ -5,3 +5,4 @@ build
 dist
 bag.egg-info
 __pycache__
+*.swp
