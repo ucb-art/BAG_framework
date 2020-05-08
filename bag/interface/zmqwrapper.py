@@ -273,7 +273,7 @@ class ZMQRouter(object):
         self.addr, data = self.socket.recv_multipart()
 
         z = io.fix_string(zlib.decompress(data))
-        obj = yaml.load(z)
+        obj = yaml.load(z, loader=yaml.Loader)
         self.log_obj('received data:', obj)
         return obj
 
