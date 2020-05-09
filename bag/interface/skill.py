@@ -449,13 +449,13 @@ class SkillInterface(DbAccess):
         for info_list in layout_list:
             new_inst_list = []
             for inst in info_list[1]:
+                if 'params' in inst:
+                    inst = inst.copy()
+                    inst['params'] = _dict_to_pcell_params(inst['params'])
                 if 'master_key' in inst:
                     # SKILL inteface cannot handle master_key info, so we remove it
                     # from InstanceInfo if we find it
                     inst.pop('master_key')
-                if 'params' in inst:
-                    inst = inst.copy()
-                    inst['params'] = _dict_to_pcell_params(inst['params'])
                 new_inst_list.append(inst)
 
             new_info_list = info_list[:]
@@ -521,10 +521,29 @@ class SkillInterface(DbAccess):
                 f.write(content)
 
             # delete old calibre view
-            cmd = 'delete_cellview( "%s" "%s" "%s" )' % (lib_name, cell_name, sch_view)
+            cmd = f'delete_cellview( "{lib_name}" "{cell_name}" "{sch_view}" )'
             self._eval_skill(cmd)
             # make extracted schematic
-            cmd = 'mgc_rve_load_setup_file( "%s" )' % fname
+            calibre_root_version = os.path.basename(os.environ['MGC_HOME']).split('.')[0]
+            calibre_year = int(calibre_root_version[-4:])
+            if calibre_year > 2011:
+                cmd = f'mgc_rve_load_setup_file( "{fname}" )'
+            else:
+                cmd0 = f'mgc_eview_globals->outputLibrary = "{lib_name}"'
+                self._eval_skill(cmd0)
+                cmd0 = f'mgc_eview_globals->schematicLibrary = "{lib_name}"'
+                self._eval_skill(cmd0)
+                cmd0 = f'mgc_eview_globals->cellMapFile = "{cell_map}"'
+                self._eval_skill(cmd0)
+                cmd0 = 'mgc_eview_globals->createUnmatchedTerminals = t'
+                self._eval_skill(cmd0)
+                # cmd0 = 'mgc_eview_globals->preserveDeviceCase = t'
+                # self._eval_skill(cmd0)
+                cmd0 = 'mgc_eview_globals->devicePlacementArrayed = t'
+                self._eval_skill(cmd0)
+                cmd0 = 'mgc_eview_globals->showCalviewDlg = nil'
+                self._eval_skill(cmd0)
+                cmd = f'mgc_rve_create_cellview("{netlist}")'
             self._eval_skill(cmd)
         else:
             # get netlists to copy

@@ -6,7 +6,7 @@ cellmap_file : {{ calibre_cellmap }}
 calibreview_log_file : ./calview.log
 calibreview_name : {{ view_name }}
 calibreview_type : schematic
-create_terminals : if_matching
+create_terminals : all
 preserve_device_case : on
 execute_callbacks : off
 reset_properties : (m=1)

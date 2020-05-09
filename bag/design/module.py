@@ -530,7 +530,7 @@ class Module(DesignMaster, metaclass=abc.ABCMeta):
                     info_list.append(dict(
                         name=inst.name,
                         lib_name=cur_lib,
-                        cell_name=rename_fun(inst.master_cell_name),
+                        cell_name= inst.master_cell_name if inst.is_primitive else rename_fun(inst.master_cell_name),
                         params=inst.parameters,
                         term_mapping=inst.connections,
                     ))

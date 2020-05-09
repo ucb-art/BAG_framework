@@ -80,8 +80,8 @@ class Checker(abc.ABC):
 
     @abc.abstractmethod
     async def async_run_rcx(self, lib_name, cell_name, sch_view='schematic',
-                            lay_view='layout', params=None):
-        # type: (str, str, str, str, Optional[Dict[str, Any]]) -> Tuple[Optional[str], str]
+                            lay_view='layout', params=None, **kwargs):
+        # type: (str, str, str, str, Optional[Dict[str, Any]], Any) -> Tuple[Optional[str], str]
         """A coroutine for running RCX.
 
         Parameters
@@ -96,6 +96,10 @@ class Checker(abc.ABC):
             layout view name.  Optional.
         params : Optional[Dict[str, Any]]
             optional RCX parameter values.
+        kwargs : Any
+            optional keyword arguments.
+            gds_layout_path : str
+                Path to the gds of the layout. If passed, do not export layout, instead copy gds
 
         Returns
         -------
@@ -353,8 +357,10 @@ class SubProcessChecker(Checker, abc.ABC):
     async def async_run_rcx(self, lib_name: str, cell_name: str,
                             sch_view: str = 'schematic',
                             lay_view: str = 'layout',
-                            params: Optional[Dict[str, Any]] = None) -> Tuple[str, str]:
-        flow_info = self.setup_rcx_flow(lib_name, cell_name, sch_view, lay_view, params)
+                            params: Optional[Dict[str, Any]] = None,
+                            **kwargs: Any,
+                            ) -> Tuple[str, str]:
+        flow_info = self.setup_rcx_flow(lib_name, cell_name, sch_view, lay_view, params, **kwargs)
         return await self._manager.async_new_subprocess_flow(flow_info)
 
     async def async_export_layout(self, lib_name: str, cell_name: str,

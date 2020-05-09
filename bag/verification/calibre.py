@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Optional, List, Tuple, Dict, Any, Sequence
 
 import os
 import subprocess
+import shutil
 
 from .virtuoso import VirtuosoChecker
 from ..io import read_file, open_temp, readlines_iter
@@ -148,8 +149,8 @@ class Calibre(VirtuosoChecker):
             return ['%s.spf' % cell_name]
         else:
             return ['%s.pex.netlist' % cell_name,
-                    '%s.pex.netlist.pex' % cell_name,
-                    '%s.pex.netlist.%s.pxi' % (cell_name, cell_name),
+                    # '%s.pex.netlist.pex' % cell_name,
+                    # '%s.pex.netlist.%s.pxi' % (cell_name, cell_name),
                     ]
 
     def setup_lvs_flow(self, lib_name, cell_name, sch_view='schematic', lay_view='layout',
@@ -299,6 +300,11 @@ class Calibre(VirtuosoChecker):
                 runset_fname = runset_file.name
                 runset_file.write(runset_content)
 
+            # remove old svdb directory
+            svdb_dir = os.path.join(run_dir, 'svdb')
+            if os.path.exists(svdb_dir) and os.path.isdir(svdb_dir):
+                shutil.rmtree(svdb_dir)
+
             cmd = ['calibre', '-gui', '-pex', '-runset', runset_fname, '-batch']
         else:
             # generate new runset
@@ -327,8 +333,11 @@ class Calibre(VirtuosoChecker):
             if not os.path.isfile(result):
                 return None, log_fname
 
-            if self.rcx_mode == 'qrc':
-                test_str = ' terminated normally  *****'
+            if self.rcx_mode in ['qrc', 'pex']:
+                if self.rcx_mode == 'qrc':
+                    test_str = ' terminated normally  *****'
+                else:
+                    test_str = ' Errors  =  0'
                 LogCheck = subprocess.Popen(['grep', '-i', test_str, log_fname], stdout=subprocess.PIPE,
                                             stderr=subprocess.STDOUT)
                 stdout, stderr = LogCheck.communicate()
@@ -458,6 +467,9 @@ class Calibre(VirtuosoChecker):
         rcx_options['cmnFDILayoutView'] = lay_view
         rcx_options['cmnFDIDEFLayoutPath'] = '%s.def' % cell_name
 
+        rcx_options['pexPexNetlistType'] = rcx_params.pop('netlist_type', 'RCC')
+        rcx_options['pexPexGroundNameValue'] = rcx_params.pop('ground_name_value', 'VSS')
+
         rcx_options.update(rcx_params)
 
         content = ''.join(('*%s: %s\n' % (key, val) for key, val in rcx_options.items()))
@@ -540,7 +552,7 @@ class Calibre(VirtuosoChecker):
                                               dict(
                                                   cell_name=cell_name,
                                                   query_input=query_input,
-                                                  extract_type=starrc_params['extract'].get('type'),
+                                                  extract_type=starrc_params['extract'].get('type', 'RCc'),
                                                   netlist_format=starrc_params.get('netlist_format',
                                                                                    'SPF'),
                                                   sch_file=sch_file,
@@ -584,6 +596,7 @@ class Calibre(VirtuosoChecker):
                                                   cell_name=cell_name,
                                                   netlist_format=qrc_params.get('netlist_format',
                                                                                 'spf'),
+                                                  extract_type=qrc_params['extract'].get('type', 'rc_coupled'),
                                                   sch_file=sch_file,
                                                   cds_lib=cds_lib_path,
                                                   skew=qrc_params.get('skew', 'tt'),

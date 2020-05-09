@@ -24,4 +24,4 @@ simLibName = "{{lib_name}}"
 incFILE = "{{source_added_file}}"
 cdlSimViewList = '("auCdl" "schematic")
 cdlSimStopList = '("auCdl")
-
+auCdlDefNetlistProc = "ansCdlHnlPrintInst"
