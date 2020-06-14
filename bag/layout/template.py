@@ -1420,72 +1420,75 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
         res = self.grid.resolution
 
         # record it as used tracks
-        [x0, y0], [x1, y1] = path.points_unit
-        y_low, y_high = min(y0, y1), max(y0, y1)
-        x_low, x_high = min(x0, x1), max(x0, x1)
-        if x_low == x0:
-            y_xlow, y_xhigh = y0, y1
-        else:
-            y_xlow, y_xhigh = y1, y0
+        points_list = path.points_unit
+        for pidx in points_list[:-1]:
+            [x0, y0] = points_list[pidx]
+            [x1, y1] = points_list[pidx + 1]
+            y_low, y_high = min(y0, y1), max(y0, y1)
+            x_low, x_high = min(x0, x1), max(x0, x1)
+            if x_low == x0:
+                y_xlow, y_xhigh = y0, y1
+            else:
+                y_xlow, y_xhigh = y1, y0
 
-        width_unit = int(path.width / self.grid.resolution)
-        w2 = math.ceil(width_unit // 2)
-        wr2 = math.ceil(width_unit // math.sqrt(2))
+            width_unit = int(path.width / self.grid.resolution)
+            w2 = math.ceil(width_unit // 2)
+            wr2 = math.ceil(width_unit // math.sqrt(2))
 
-        if x0 == x1:
-            # 1. 90 degree cases
-            bbox = BBox(x0 - w2, y_low - w2, x0 + w2, y_high + w2, res, unit_mode=True)
-            self._used_tracks.record_box(lay_id, bbox, dx=0, dy=0, res=res)
-            # rect = Rect(path.layer, bbox)
-            # self._layout.add_rect(rect)
-        elif y0 == y1:
-            # 2. 0 degree cases
-            bbox = BBox(x_low - w2, y0 - w2, x_high + w2, y0 + w2, res, unit_mode=True)
-            self._used_tracks.record_box(lay_id, bbox, dx=0, dy=0, res=res)
-            # rect = Rect(path.layer, bbox)
-            # self._layout.add_rect(rect)
-        elif y_xlow == y_low:
-            # 3. 45 degree case
-            x_start, x_stop = x_low - wr2, x_high + wr2
-            y_start, y_stop = y_low - wr2, y_high + wr2
-            while True:
-                bbox = BBox(x_start, y_start, x_start + wr2, y_start + wr2, res, unit_mode=True)
+            if x0 == x1:
+                # 1. 90 degree cases
+                bbox = BBox(x0 - w2, y_low - w2, x0 + w2, y_high + w2, res, unit_mode=True)
                 self._used_tracks.record_box(lay_id, bbox, dx=0, dy=0, res=res)
                 # rect = Rect(path.layer, bbox)
                 # self._layout.add_rect(rect)
-                if x_start + wr2 >= x_stop:
-                    break
-                bbox = BBox(x_start, y_start + wr2, x_start + wr2, y_start + 2 * wr2, res, unit_mode=True)
+            elif y0 == y1:
+                # 2. 0 degree cases
+                bbox = BBox(x_low - w2, y0 - w2, x_high + w2, y0 + w2, res, unit_mode=True)
                 self._used_tracks.record_box(lay_id, bbox, dx=0, dy=0, res=res)
                 # rect = Rect(path.layer, bbox)
                 # self._layout.add_rect(rect)
-                bbox = BBox(x_start + wr2, y_start, x_start + 2 * wr2, y_start + wr2, res, unit_mode=True)
-                self._used_tracks.record_box(lay_id, bbox, dx=0, dy=0, res=res)
-                # rect = Rect(path.layer, bbox)
-                # self._layout.add_rect(rect)
-                x_start += wr2
-                y_start += wr2
-        else:
-            # 4. 135 degree case
-            x_start, x_stop = x_low - wr2, x_high + wr2
-            y_start, y_stop = y_high + wr2, y_low - wr2
-            while True:
-                bbox = BBox(x_start, y_start - wr2, x_start + wr2, y_start, res, unit_mode=True)
-                self._used_tracks.record_box(lay_id, bbox, dx=0, dy=0, res=res)
-                # rect = Rect(path.layer, bbox)
-                # self._layout.add_rect(rect)
-                if x_start + wr2 >= x_stop:
-                    break
-                bbox = BBox(x_start, y_start - 2 * wr2, x_start + wr2, y_start - wr2, res, unit_mode=True)
-                self._used_tracks.record_box(lay_id, bbox, dx=0, dy=0, res=res)
-                # rect = Rect(path.layer, bbox)
-                # self._layout.add_rect(rect)
-                bbox = BBox(x_start + wr2, y_start - wr2, x_start + 2 * wr2, y_start, res, unit_mode=True)
-                self._used_tracks.record_box(lay_id, bbox, dx=0, dy=0, res=res)
-                # rect = Rect(path.layer, bbox)
-                # self._layout.add_rect(rect)
-                x_start += wr2
-                y_start -= wr2
+            elif y_xlow == y_low:
+                # 3. 45 degree case
+                x_start, x_stop = x_low - wr2, x_high + wr2
+                y_start, y_stop = y_low - wr2, y_high + wr2
+                while True:
+                    bbox = BBox(x_start, y_start, x_start + wr2, y_start + wr2, res, unit_mode=True)
+                    self._used_tracks.record_box(lay_id, bbox, dx=0, dy=0, res=res)
+                    # rect = Rect(path.layer, bbox)
+                    # self._layout.add_rect(rect)
+                    if x_start + wr2 >= x_stop:
+                        break
+                    bbox = BBox(x_start, y_start + wr2, x_start + wr2, y_start + 2 * wr2, res, unit_mode=True)
+                    self._used_tracks.record_box(lay_id, bbox, dx=0, dy=0, res=res)
+                    # rect = Rect(path.layer, bbox)
+                    # self._layout.add_rect(rect)
+                    bbox = BBox(x_start + wr2, y_start, x_start + 2 * wr2, y_start + wr2, res, unit_mode=True)
+                    self._used_tracks.record_box(lay_id, bbox, dx=0, dy=0, res=res)
+                    # rect = Rect(path.layer, bbox)
+                    # self._layout.add_rect(rect)
+                    x_start += wr2
+                    y_start += wr2
+            else:
+                # 4. 135 degree case
+                x_start, x_stop = x_low - wr2, x_high + wr2
+                y_start, y_stop = y_high + wr2, y_low - wr2
+                while True:
+                    bbox = BBox(x_start, y_start - wr2, x_start + wr2, y_start, res, unit_mode=True)
+                    self._used_tracks.record_box(lay_id, bbox, dx=0, dy=0, res=res)
+                    # rect = Rect(path.layer, bbox)
+                    # self._layout.add_rect(rect)
+                    if x_start + wr2 >= x_stop:
+                        break
+                    bbox = BBox(x_start, y_start - 2 * wr2, x_start + wr2, y_start - wr2, res, unit_mode=True)
+                    self._used_tracks.record_box(lay_id, bbox, dx=0, dy=0, res=res)
+                    # rect = Rect(path.layer, bbox)
+                    # self._layout.add_rect(rect)
+                    bbox = BBox(x_start + wr2, y_start - wr2, x_start + 2 * wr2, y_start, res, unit_mode=True)
+                    self._used_tracks.record_box(lay_id, bbox, dx=0, dy=0, res=res)
+                    # rect = Rect(path.layer, bbox)
+                    # self._layout.add_rect(rect)
+                    x_start += wr2
+                    y_start -= wr2
 
         return path
 
@@ -3328,7 +3331,7 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
         if num_pitch_2 % 2 == 0:
             num_pitch = num_pitch_2 // 2  # type: Union[float, int]
         else:
-            num_pitch = num_pitch_2 / 2 # type: Union[float, int]
+            num_pitch = num_pitch_2 / 2  # type: Union[float, int]
         # convert width
         if tr_w < 0:
             width_unit = int(self.grid.get_track_width(wire_layer, wire_tid.width, unit_mode=True))
@@ -3620,7 +3623,7 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
         return track_list
 
     def draw_vias_on_intersections(self, bot_warr_list, top_warr_list):
-        # type: (Union[WireArray, List[WireArray]], Union[WireArray, List[WireArray]]) -> None
+        # type: (Union[WireArray, List[WireArray]], Union[WireArray, List[WireArray]]) -> List[bool]
         """Draw vias on all intersections of the two given wire groups.
 
         Parameters
@@ -3642,7 +3645,7 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
         grid = self.grid
         res = grid.resolution
 
-        bwarr_conn_made_list= [False for bwarr in bot_warr_list]
+        bwarr_conn_made_list = [False for _ in bot_warr_list]
 
         for bwarr_indx, bwarr in enumerate(bot_warr_list):
             bot_tl = bwarr.lower_unit
@@ -3726,8 +3729,8 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
                       flip=False,  # type: bool
                       unit_mode=False,  # type: bool
                       sup_type='both',  # type: str
-                      vss_only=False, # type: bool
-                      vdd_only=False, # type: bool
+                      vss_only=False,  # type: bool
+                      vdd_only=False,  # type: bool
                       ):
         # type: (...) -> Tuple[List[WireArray], List[WireArray]]
         """Draw power fill on the given layer."""
