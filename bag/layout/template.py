@@ -1421,8 +1421,7 @@ class TemplateBase(DesignMaster, metaclass=abc.ABCMeta):
 
         # record it as used tracks
         points_list = path.points_unit
-        for pidx in points_list[:-1]:
-            [x0, y0] = points_list[pidx]
+        for pidx, [x0, y0] in enumerate(points_list[:-1]):
             [x1, y1] = points_list[pidx + 1]
             y_low, y_high = min(y0, y1), max(y0, y1)
             x_low, x_high = min(x0, x1), max(x0, x1)
