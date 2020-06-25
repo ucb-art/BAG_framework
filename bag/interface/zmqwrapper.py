@@ -11,6 +11,7 @@ import os
 import yaml
 import zmq
 
+from bag.io import read_yaml
 from .. import io
 
 
@@ -118,7 +119,7 @@ class ZMQDealer(object):
         if events:
             data = self.socket.recv()
             z = io.fix_string(zlib.decompress(data))
-            obj = yaml.load(z, Loader=yaml.FullLoader)
+            obj = read_yaml(z)
             self.log_obj('received data:', obj)
             return obj
         else:
@@ -273,7 +274,7 @@ class ZMQRouter(object):
         self.addr, data = self.socket.recv_multipart()
 
         z = io.fix_string(zlib.decompress(data))
-        obj = yaml.load(z, Loader=yaml.Loader)
+        obj = read_yaml(z)
         self.log_obj('received data:', obj)
         return obj
 
