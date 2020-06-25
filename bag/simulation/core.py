@@ -339,8 +339,8 @@ class MeasurementManager(object, metaclass=abc.ABCMeta):
     def get_state_output(self, state):
         # type: (str) -> Dict[str, Any]
         """Get the post-processed output of the given state."""
-        with open_file(os.path.join(self.data_dir, '%s.yaml' % state), 'r') as f:
-            return yaml.load(f)
+        file_name = os.path.join(self.data_dir, '%s.yaml' % state)
+        return read_yaml(file_name)
 
     def get_testbench_specs(self, tb_type):
         # type: (str) -> Dict[str, Any]
@@ -588,8 +588,7 @@ class DesignManager(object):
             the result dictionary.
         """
         fname = os.path.join(self._root_dir, dsn_name, self.specs['summary_fname'])
-        with open_file(fname, 'r') as f:
-            summary = yaml.load(f)
+        summary = read_yaml(fname)
 
         return summary
 

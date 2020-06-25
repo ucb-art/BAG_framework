@@ -9,7 +9,7 @@ import abc
 
 from bag.io import read_yaml
 
-from bag.util.interval import IntervalSet
+from ..util.interval import IntervalSet
 from .util import BBox
 from .template import TemplateDB, TemplateBase
 from .objects import Instance

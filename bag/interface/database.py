@@ -533,6 +533,25 @@ class DbAccess(InterfaceBase, abc.ABC):
         for cell_name in self.get_cells_in_library(lib_name):
             self._import_design(lib_name, cell_name, imported_cells, dsn_db, new_lib_path)
 
+    def import_sch_cellview(self, lib_name, cell_name, dsn_db, new_lib_path):
+        """Import the given schematic and symbol template into Python.
+
+       This import process is done recursively.
+
+       Parameters
+       ----------
+       lib_name : str
+           library name.
+       cell_name : str
+           cell name.
+        dsn_db : ModuleDB
+            the design database object.
+        new_lib_path: str
+            location to import new libraries to.
+       """
+        imported_cells = set()
+        self._import_design(lib_name, cell_name, imported_cells, dsn_db, new_lib_path)
+
     def _import_design(self, lib_name, cell_name, imported_cells, dsn_db, new_lib_path):
         """Recursive helper for import_design_library.
         """
@@ -559,7 +578,7 @@ class DbAccess(InterfaceBase, abc.ABC):
 
         # update netlist file
         content = self.parse_schematic_template(lib_name, cell_name)
-        sch_info = yaml.load(content)
+        sch_info = yaml.load(content, Loader=yaml.FullLoader)
         try:
             write_file(yaml_file, content)
         except IOError:

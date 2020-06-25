@@ -6,13 +6,12 @@
 from typing import TYPE_CHECKING, Dict, Any, Tuple, Optional, Union, Type, Sequence, TypeVar
 
 import os
-import string
 import importlib
 import cProfile
 import pstats
+from pathlib import Path
 
 # noinspection PyPackageRequirements
-import yaml
 
 from .interface import ZMQDealer
 from .interface.database import DbAccess
@@ -20,7 +19,7 @@ from .design import ModuleDB, SchInstance
 from .layout.routing import RoutingGrid
 from .layout.template import TemplateDB
 from .layout.core import DummyTechInfo
-from .io import read_file, sim_data
+from .io import read_file, sim_data, read_yaml_env
 from .concurrent.core import batch_async_task
 
 if TYPE_CHECKING:
@@ -28,29 +27,10 @@ if TYPE_CHECKING:
     from .layout.template import TemplateBase
     from .layout.core import TechInfo
     from .design.module import Module
+    from .simulation.core_v2 import TestbenchManager, MeasurementManager
 
     ModuleType = TypeVar('ModuleType', bound=Module)
     TemplateType = TypeVar('TemplateType', bound=TemplateBase)
-
-
-def _parse_yaml_file(fname):
-    # type: (str) -> Dict[str, Any]
-    """Parse YAML file with environment variable substitution.
-
-    Parameters
-    ----------
-    fname : str
-        yaml file name.
-
-    Returns
-    -------
-    table : Dict[str, Any]
-        the yaml file as a dictionary.
-    """
-    content = read_file(fname)
-    # substitute environment variables
-    content = string.Template(content).substitute(os.environ)
-    return yaml.load(content)
 
 
 def _get_config_file_abspath(fname):
@@ -214,7 +194,10 @@ class Testbench(object):
             the parameter value will be rounded to this precision.
         """
         param_config = dict(type='single', value=val)
-        self.parameters[name] = self.sim.format_parameter_value(param_config, precision)
+        if isinstance(val, str):
+            self.parameters[name] = val
+        else:
+            self.parameters[name] = self.sim.format_parameter_value(param_config, precision)
 
     def set_env_parameter(self, name, val_list, precision=6):
         # type: (str, Sequence[float], int) -> None
@@ -433,8 +416,8 @@ def create_tech_info(bag_config_path=None):
             raise Exception('BAG_CONFIG_PATH not defined.')
         bag_config_path = os.environ['BAG_CONFIG_PATH']
 
-    bag_config = _parse_yaml_file(bag_config_path)
-    tech_params = _parse_yaml_file(bag_config['tech_config_path'])
+    bag_config = read_yaml_env(bag_config_path)
+    tech_params = read_yaml_env(bag_config['tech_config_path'])
     if 'class' in tech_params:
         tech_cls = _import_class_from_str(tech_params['class'])
         tech_info = tech_cls(tech_params)
@@ -475,7 +458,7 @@ class BagProject(object):
                 raise Exception('BAG_CONFIG_PATH not defined.')
             bag_config_path = os.environ['BAG_CONFIG_PATH']
 
-        self.bag_config = _parse_yaml_file(bag_config_path)
+        self.bag_config = read_yaml_env(bag_config_path)
         bag_tmp_dir = os.environ.get('BAG_TEMP_DIR', None)
 
         # get port files
@@ -550,6 +533,24 @@ class BagProject(object):
         new_lib_path = self.bag_config['new_lib_path']
         self.impl_db.import_design_library(lib_name, self.dsn_db, new_lib_path)
 
+    def import_sch_cellview(self, lib_name: str, cell_name: str) -> None:
+        """Import the given schematic and symbol template into Python.
+
+        This import process is done recursively.
+
+        Parameters
+        ----------
+        lib_name : str
+            library name.
+        cell_name : str
+            cell name.
+        """
+        if self.impl_db is None:
+            raise Exception('BAG Server is not set up.')
+
+        new_lib_path = self.bag_config['new_lib_path']
+        self.impl_db.import_sch_cellview(lib_name, cell_name, self.dsn_db, new_lib_path)
+
     def get_cells_in_library(self, lib_name):
         # type: (str) -> Sequence[str]
         """Get a list of cells in the given library.
@@ -604,7 +605,7 @@ class BagProject(object):
 
     def generate_cell(self,  # type: BagProject
                       specs,  # type: Dict[str, Any]
-                      temp_cls,  # type: Type[TemplateType]
+                      temp_cls=None,  # type: Optional[Type[TemplateType]]
                       gen_lay=True,  # type: bool
                       gen_sch=False,  # type: bool
                       run_lvs=False,  # type: bool
@@ -616,15 +617,16 @@ class BagProject(object):
                       save_cache=False,  # type: bool
                       **kwargs,
                       ):
-        # type: (...) -> Optional[pstats.Stats]
+        # type: (...) -> Optional[Union[pstats.Stats, Dict[str, Any]]]
         """Generate layout/schematic of a given cell from specification file.
 
         Parameters
         ----------
         specs : Dict[str, Any]
             the specification dictionary.
-        temp_cls : Type[TemplateType]
-            the TemplateBase subclass to instantiate.
+        temp_cls : Optional[Type[TemplateType]]
+            the TemplateBase subclass to instantiate
+            if not provided, it will be imported from lay_class entry in specs dictionary.
         gen_lay : bool
             True to generate layout.
         gen_sch : bool
@@ -648,26 +650,41 @@ class BagProject(object):
 
         Returns
         -------
-        stats : pstats.Stats
-            If profiling is enabled, the statistics object.
+        result: Optional[Union[pstats.Stats, Dict[str, Any]]]
+            If profiling is enabled, result will be the statistics object.
+            If the last thing done is layout or schematic, result will contain sch_params
+            If the last thing done is lvs, in case of failure result will
+            contain lvs log file in a dictionary, otherwise None
+            If the last thing done is rcx, in case of failure result will
+            contain rcx log file in a dictionary, otherwise None
         """
         prefix = kwargs.get('prefix', '')
         suffix = kwargs.get('suffix', '')
 
+        grid_specs = specs['routing_grid']
         impl_lib = specs['impl_lib']
         impl_cell = specs['impl_cell']
-        sch_lib = specs['sch_lib']
-        sch_cell = specs['sch_cell']
-        grid_specs = specs['routing_grid']
+        lay_str = specs.get('lay_class', '')
+        sch_lib = specs.get('sch_lib', '')
+        sch_cell = specs.get('sch_cell', '')
         params = specs['params']
         gds_lay_file = specs.get('gds_lay_file', '')
         cache_dir = specs.get('cache_dir', '')
+
+        if temp_cls is None and lay_str:
+            temp_cls = _import_class_from_str(lay_str)
+
+        has_lay = temp_cls is not None
+        if gen_lay and not has_lay:
+            raise ValueError('layout_class is not specified')
+
         if use_cache:
             db_cache_dir = specs.get('cache_dir', '')
         else:
             db_cache_dir = ''
 
-        if gen_lay or gen_sch:
+        result_pstat = None
+        if has_lay:
             temp_db = self.make_template_db(impl_lib, grid_specs, use_cybagoa=use_cybagoa,
                                             gds_lay_file=gds_lay_file, cache_dir=db_cache_dir)
 
@@ -678,9 +695,7 @@ class BagProject(object):
                 profiler.runcall(temp_db.new_template, params=params, temp_cls=temp_cls,
                                  debug=False)
                 profiler.dump_stats(profile_fname)
-                result = pstats.Stats(profile_fname).strip_dirs()
-            else:
-                result = None
+                result_pstat = pstats.Stats(profile_fname).strip_dirs()
 
             temp = temp_db.new_template(params=params, temp_cls=temp_cls, debug=debug)
             print('computation done.')
@@ -697,36 +712,311 @@ class BagProject(object):
                 temp_db.batch_layout(self, temp_list, name_list, debug=debug)
                 print('layout done.')
 
-            if gen_sch:
-                dsn = self.create_design_module(lib_name=sch_lib, cell_name=sch_cell)
-                print('computing schematic...')
-                dsn.design(**temp.sch_params)
-                print('creating schematic...')
-                dsn.implement_design(impl_lib, top_cell_name=impl_cell, prefix=prefix,
-                                     suffix=suffix)
-                print('schematic done.')
+            sch_params = temp.sch_params
         else:
-            result = None
+            sch_params = params
 
+        if gen_sch:
+            dsn = self.create_design_module(lib_name=sch_lib, cell_name=sch_cell)
+            print('computing schematic...')
+            dsn.design(**sch_params)
+            print('creating schematic...')
+            dsn.implement_design(impl_lib, top_cell_name=impl_cell, prefix=prefix,
+                                 suffix=suffix)
+            print('schematic done.')
+
+        result = sch_params
         lvs_passed = False
-        if run_lvs or run_rcx:
+        if run_lvs:
             print('running lvs...')
-            lvs_passed, lvs_log = self.run_lvs(impl_lib, impl_cell)
-            print('LVS log: %s' % lvs_log)
+            lvs_passed, lvs_log = self.run_lvs(impl_lib, impl_cell, gds_lay_file=gds_lay_file)
             if lvs_passed:
                 print('LVS passed!')
+                result = dict(log='')
             else:
-                print('LVS failed...')
-        if lvs_passed and run_rcx:
+                raise ValueError(f'LVS failed, lvs_log: {lvs_log}')
+
+        if run_rcx and ((run_lvs and lvs_passed) or not run_lvs):
             print('running rcx...')
             rcx_passed, rcx_log = self.run_rcx(impl_lib, impl_cell)
-            print('RCX log: %s' % rcx_log)
             if rcx_passed:
                 print('RCX passed!')
+                result = dict(log='')
             else:
-                print('RCX failed...')
+                raise ValueError(f'RCX failed, rcx_log: {rcx_log}')
 
+        if result_pstat:
+            return result_pstat
         return result
+
+    def replace_dut_in_wrapper(self, params: Dict[str, Any], dut_lib: str,
+                               dut_cell: str) -> None:
+        # helper function that replaces dut_lib and dut_cell in the wrapper recursively base on
+        # dut_params
+        dut_params = params.get('dut_params', None)
+        if dut_params is None:
+            params['dut_lib'] = dut_lib
+            params['dut_cell'] = dut_cell
+            return
+        return self.replace_dut_in_wrapper(dut_params, dut_lib, dut_cell)
+
+    def simulate_cell(self,
+                      specs: Dict[str, Any],
+                      gen_cell: bool = True,
+                      gen_wrapper: bool = True,
+                      gen_tb: bool = True,
+                      load_results: bool = False,
+                      extract: bool = False,
+                      run_sim: bool = True) -> Optional[Dict[str, Any]]:
+        """
+        Runs a minimum executable parts of the Testbench Manager flow selectively according to
+        a spec dictionary.
+
+        For example you can set the flags to generate a new cell, but since wrapper and test bench
+        exist, maybe you want to skip those, and run the simulation in the end. Maybe you
+        already created the cell all the way up to test bench level, and now you only need to
+        run simulation.
+
+        This function only works with Testbench Managers written in format of
+        simulation.core_v2.TestbenchManager
+
+        Parameters
+        ----------
+        specs:
+            Dictionary of specifications
+            Some non-obvious conventions:
+            - if contains tbm_specs keyword, simulation is ran through testbench manager v2,
+            otherwise there should be a sim_params entry that specifies the simulation.
+            - Wrapper is assumed to be in the specs dictionary, if it is generated outside of
+            this function, gen_wrapper should be False.
+        gen_cell:
+            True to call generate_cell on specs
+        gen_wrapper:
+            True to generate Wrapper. Currently only one top-level wrapper is supported.
+        gen_tb:
+            True to generate test bench. If test bench is created, this flag can be set to False.
+        load_results:
+            True to skip simulation and load the results.
+        extract:
+            False to skip layout generation and only simulate schematic
+        run_sim:
+            True to run simulation. If the purpose of calling this function is just to generate
+            some part of simulation flow to debug, this flag can be set to False.
+        Returns
+        -------
+        results: Optional[Dict[str, Any]]
+            if run_sim/load_results = True, contains simulations results, otherwise it's None.
+        """
+
+        impl_lib = specs['impl_lib']
+        impl_cell = specs['impl_cell']
+        root_dir = Path(specs['root_dir'])
+
+        if gen_cell and not load_results:
+            print('generating cell ...')
+            self.generate_cell(specs,
+                               gen_lay=extract,
+                               gen_sch=True,
+                               run_lvs=extract,
+                               run_rcx=extract,
+                               use_cybagoa=True)
+            print('cell generated.')
+
+        # if testbench manager v2 found use that instead of interpreting simulation directly
+        tbm_specs = specs.get('tbm_specs', None)
+        if tbm_specs:
+            tbm_cls_str = tbm_specs['tbm_cls']
+            tbm_cls = _import_class_from_str(tbm_cls_str)
+            tbm: TestbenchManager = tbm_cls(root_dir)
+            sim_view_list = tbm_specs.get('sim_view_list', [])
+            if not sim_view_list:
+                view_name = 'netlist' if extract else 'schematic'
+                sim_view_list.append((impl_cell, view_name))
+            sim_envs = tbm_specs['sim_envs']
+
+            if load_results:
+                return tbm.load_results(impl_cell, tbm_specs)
+
+            results = tbm.simulate(bprj=self,
+                                   impl_lib=impl_lib,
+                                   impl_cell=impl_cell,
+                                   sim_view_list=sim_view_list,
+                                   env_list=sim_envs,
+                                   tb_dict=tbm_specs,
+                                   wrapper_dict=None,
+                                   gen_tb=gen_tb,
+                                   gen_wrapper=gen_wrapper,
+                                   run_sim=run_sim)
+            return results
+
+        sim_params = specs.get('sim_params', None)
+        wrapper = sim_params.get('wrapper', None)
+
+        has_wrapper = wrapper is not None
+        if gen_wrapper and not has_wrapper:
+            raise ValueError('must provide a wrapper in sim_params')
+
+        wrapper_lib = wrapper_cell = wrapped_cell = wrapper_params = None
+        if has_wrapper:
+            wrapper_lib = wrapper['wrapper_lib']
+            wrapper_cell = wrapper['wrapper_cell']
+            wrapper_params = wrapper.get('params', {})
+            wrapper_suffix = wrapper.get('wrapper_suffix', '')
+            if not wrapper_suffix:
+                wrapper_suffix = f'{wrapper_cell}'
+            wrapped_cell = f'{impl_cell}_{wrapper_suffix}'
+
+        if gen_wrapper and not gen_tb:
+            raise ValueError('generated a new wrapper, therefore gen_tb should also be true')
+
+        tb_lib = sim_params['tb_lib']
+        tb_cell = sim_params['tb_cell']
+        tb_params = sim_params.get('tb_params', {})
+        tb_suffix = sim_params.get('tb_suffix', '')
+        if not tb_suffix:
+            tb_suffix = f'{tb_cell}'
+        tb_name = f'{impl_cell}_{tb_suffix}'
+
+        tb_fname = root_dir / Path(tb_name, f'{tb_name}.hdf5')
+
+        if load_results:
+            print("loading results ...")
+            if tb_fname.exists():
+                return sim_data.load_sim_file(tb_fname)
+            raise ValueError(f'simulation results does not exist in {str(tb_fname)}')
+
+        if gen_wrapper and has_wrapper:
+            print('generating wrapper ...')
+            master = self.create_design_module(lib_name=wrapper_lib, cell_name=wrapper_cell)
+            self.replace_dut_in_wrapper(wrapper_params, impl_lib, impl_cell)
+            master.design(**wrapper_params)
+            master.implement_design(impl_lib, wrapped_cell)
+            print('wrapper generated.')
+
+        if gen_tb:
+            print('generating testbench ...')
+            tb_master = self.create_design_module(tb_lib, tb_cell)
+            dut_cell = wrapped_cell if has_wrapper else impl_cell
+            tb_master.design(dut_lib=impl_lib, dut_cell=dut_cell, **tb_params)
+            tb_master.implement_design(impl_lib, tb_name)
+            print('testbench generated.')
+
+        if run_sim:
+            print('setting up ADEXL ...')
+            sim_view_list = sim_params.get('sim_view_list', [])
+            if not sim_view_list:
+                view_name = 'netlist' if extract else 'schematic'
+                sim_view_list.append((impl_cell, view_name))
+
+            sim_envs = sim_params['sim_envs']
+            sim_swp_params = sim_params.get('sim_swp_params', {})
+            sim_vars = sim_params.get('sim_vars', {})
+            sim_outputs = sim_params.get('sim_outputs', {})
+
+            tb = self.configure_testbench(impl_lib, tb_name)
+
+            # set simulation variables
+            for key, val in sim_vars.items():
+                tb.set_parameter(key, val)
+
+            # set sweep parameters
+            for key, val in sim_swp_params.items():
+                tb.set_sweep_parameter(key, **val)
+
+            # set the simulation outputs
+            for key, val in sim_outputs.items():
+                tb.add_output(key, val)
+
+            # change the view_name (netlist or schematic)
+            for cell, view in sim_view_list:
+                tb.set_simulation_view(impl_lib, cell, view)
+
+            tb.set_simulation_environments(sim_envs)
+            tb.update_testbench()
+            print('setup completed.')
+            print('running simulation ...')
+            tb.run_simulation()
+            print('simulation done.')
+            print('loading results ...')
+            results = sim_data.load_sim_results(tb.save_dir)
+            if not results.get('sweep_params', {}):
+                raise ValueError(f'results are empty, either you forgot to specify outputs, or '
+                                 f'simulation failed. check sim_log: {tb.save_dir}/ocn_output.log')
+            print('results loaded.')
+            print('saving results into hdf5')
+            sim_data.save_sim_results(results, tb_fname)
+            print('results saved.')
+            return results
+
+    def measure_cell(self,
+                     specs: Dict[str, Any],
+                     gen_cell: bool = True,
+                     gen_wrapper: bool = True,
+                     gen_tb: bool = True,
+                     load_results: bool = False,
+                     extract: bool = False,
+                     run_sims: bool = True) -> Optional[Dict[str, Any]]:
+        """
+        Runs a minimum executable parts of the Measurement Manager flow selectively according to
+        a spec dictionary.
+
+        For example you can set the flags to generate a new cell, but since wrapper and test bench
+        exist, maybe you want to skip those, and run the measurement in the end. Maybe you
+        already created the cell all the way up to test bench level, and now you only need to
+        run simulation.
+
+        This function only works with Measurement Managers written in format of
+        simulation.core_v2.MeasurementManager
+
+        Parameters
+        ----------
+        specs:
+            Dictionary of specifications
+            Some non-obvious conventions:
+            - if contains tbm_specs keyword, simulation is ran through testbench manager v2,
+            otherwise there should be a sim_params entry that specifies the simulation.
+            - Wrapper is assumed to be in the specs dictionary, if it is generated outside of
+            this function, gen_wrapper should be False.
+        gen_cell:
+            True to call generate_cell on specs
+        gen_wrapper:
+            True to generate Wrapper. Currently only one top-level wrapper is supported.
+        gen_tb:
+            True to generate test bench. If test bench is created, this flag can be set to False.
+        load_results:
+            True to skip simulation and load the results.
+        extract:
+            False to skip layout generation and only simulate schematic
+        run_sims:
+            True to run simulations. If the purpose of calling this function is just to generate
+            some part of simulation flow to debug, this flag can be set to False.
+        Returns
+        -------
+        results: Optional[Dict[str, Any]]
+            if run_sim/load_results = True, contains measurement results, otherwise it's None.
+        """
+
+        impl_lib = specs['impl_lib']
+        impl_cell = specs['impl_cell']
+        root_dir = Path(specs['root_dir'])
+
+        if gen_cell and not load_results:
+            print('generating cell ...')
+            self.generate_cell(specs,
+                               gen_lay=extract,
+                               gen_sch=True,
+                               run_lvs=extract,
+                               run_rcx=extract,
+                               use_cybagoa=True)
+            print('cell generated.')
+
+        mm_specs = specs['mm_specs']
+        mm_cls_str = mm_specs['mm_cls']
+        mm_cls = _import_class_from_str(mm_cls_str)
+        mm: MeasurementManager = mm_cls(root_dir, mm_specs)
+        return mm.measure(self, impl_lib, impl_cell, load_results=load_results,
+                          gen_wrapper=gen_wrapper, gen_tb=gen_tb, run_sims=run_sims,
+                          extract=extract)
 
     def create_library(self, lib_name, lib_path=''):
         # type: (str, str) -> None

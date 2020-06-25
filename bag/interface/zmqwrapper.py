@@ -2,15 +2,17 @@
 
 """This module defines various wrapper around ZMQ sockets."""
 
-import os
+from datetime import datetime
 import zlib
 import pprint
+from pathlib import Path
+import os
 
 import yaml
 import zmq
 
-import bag.io
 from bag.io import read_yaml
+from .. import io
 
 
 class ZMQDealer(object):
@@ -47,25 +49,26 @@ class ZMQDealer(object):
         self.poller.register(self.socket, zmq.POLLIN)
 
         if self._log_file is not None:
-            self._log_file = os.path.abspath(self._log_file)
+            self._log_file = Path(self._log_file).resolve()
             # If log file directory does not exists, create it
-            log_dir = os.path.dirname(self._log_file)
-            if not os.path.exists(log_dir):
-                os.makedirs(log_dir)
-            # clears any existing log
-            if os.path.exists(self._log_file):
-                os.remove(self._log_file)
+            log_dir: Path = self._log_file.parent
+            log_dir.mkdir(parents=True, exist_ok=True)
+            # time stamp the file
+            now = datetime.now()
+            time_stamp = now.strftime('%Y%m%d_%H%M%S%f')
+            ext = self._log_file.suffix
+            self._log_file = str(log_dir / f'{self._log_file.stem}_{time_stamp}{ext}')
 
     def log_msg(self, msg):
         """Log the given message"""
         if self._log_file is not None:
-            bag.io.write_file(self._log_file, '%s\n' % msg, append=True)
+            io.write_file(self._log_file, '%s\n' % msg, append=True)
 
     def log_obj(self, msg, obj):
         """Log the given object"""
         if self._log_file is not None:
             obj_str = pprint.pformat(obj)
-            bag.io.write_file(self._log_file, '%s\n%s\n' % (msg, obj_str), append=True)
+            io.write_file(self._log_file, '%s\n%s\n' % (msg, obj_str), append=True)
 
     def close(self):
         """Close the underlying socket."""
@@ -79,7 +82,7 @@ class ZMQDealer(object):
         obj : any
             the object to send.
         """
-        p = bag.io.to_bytes(yaml.dump(obj))
+        p = io.to_bytes(yaml.dump(obj))
         z = zlib.compress(p)
         self.log_obj('sending data:', obj)
         self.socket.send(z)
@@ -115,7 +118,7 @@ class ZMQDealer(object):
 
         if events:
             data = self.socket.recv()
-            z = bag.io.fix_string(zlib.decompress(data))
+            z = io.fix_string(zlib.decompress(data))
             obj = read_yaml(z)
             self.log_obj('received data:', obj)
             return obj
@@ -199,13 +202,13 @@ class ZMQRouter(object):
     def log_msg(self, msg):
         """Log the given message"""
         if self._log_file is not None:
-            bag.io.write_file(self._log_file, '%s\n' % msg, append=True)
+            io.write_file(self._log_file, '%s\n' % msg, append=True)
 
     def log_obj(self, msg, obj):
         """Log the given object"""
         if self._log_file is not None:
             obj_str = pprint.pformat(obj)
-            bag.io.write_file(self._log_file, '%s\n%s\n' % (msg, obj_str), append=True)
+            io.write_file(self._log_file, '%s\n%s\n' % (msg, obj_str), append=True)
 
     def send_msg(self, msg, addr=None):
         """Sends a string message
@@ -240,7 +243,7 @@ class ZMQRouter(object):
             warn_msg = '*WARNING* No receiver address specified.  Message not sent:'
             self.log_obj(warn_msg, obj)
         else:
-            p = bag.io.to_bytes(yaml.dump(obj))
+            p = io.to_bytes(yaml.dump(obj))
             z = zlib.compress(p)
             self.log_obj('sending data:', obj)
             self.socket.send_multipart([addr, z])
@@ -270,7 +273,7 @@ class ZMQRouter(object):
         """
         self.addr, data = self.socket.recv_multipart()
 
-        z = bag.io.fix_string(zlib.decompress(data))
+        z = io.fix_string(zlib.decompress(data))
         obj = read_yaml(z)
         self.log_obj('received data:', obj)
         return obj

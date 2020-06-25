@@ -2,16 +2,50 @@
 
 """This module handles file related IO.
 """
+from typing import Dict, Any
 
 import os
 import tempfile
 import time
 import pkg_resources
 import codecs
+import string
 
 import yaml
+import pickle
 
 from .common import bag_encoding, bag_codec_error
+
+
+class Pickle:
+    """
+    A global class for reading and writing Pickle format.
+    """
+    @staticmethod
+    def save(obj, file, **kwargs) -> None:
+        with open(file, 'wb') as f:
+            pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+
+    @staticmethod
+    def load(file, **kwargs):
+        with open(file, 'rb') as f:
+            return pickle.load(f)
+
+
+class Yaml:
+    """
+    A global class for reading and writing yaml format
+    For backward compatibility some module functions may overlap with this.
+    """
+    @staticmethod
+    def save(obj, file, **kwargs) -> None:
+        with open(file, 'w') as f:
+            yaml.dump(obj, f)
+
+    @staticmethod
+    def load(file, **kwargs):
+        with open(file, 'r') as f:
+            return yaml.load(f, Loader=yaml.Loader)
 
 
 def open_file(fname, mode):
@@ -72,6 +106,26 @@ def readlines_iter(fname):
             yield line
 
 
+def read_yaml_env(fname):
+    # type: (str) -> Dict[str, Any]
+    """Parse YAML file with environment variable substitution.
+
+    Parameters
+    ----------
+    fname : str
+        yaml file name.
+
+    Returns
+    -------
+    table : Dict[str, Any]
+        the yaml file as a dictionary.
+    """
+    content = read_file(fname)
+    # substitute environment variables
+    content = string.Template(content).substitute(os.environ)
+    return yaml.load(content, Loader=yaml.Loader)
+
+
 def read_yaml(fname):
     """Read the given file using YAML.
 
@@ -86,7 +140,7 @@ def read_yaml(fname):
         the object returned by YAML.
     """
     with open_file(fname, 'r') as f:
-        content = yaml.load(f)
+        content = yaml.load(f, Loader=yaml.Loader)
 
     return content
 
