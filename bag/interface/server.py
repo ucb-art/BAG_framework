@@ -23,9 +23,9 @@ and will strip the newline before sending result back to client.
 """
 
 import traceback
+import numpy as np
 
 from .. import io
-import numpy as np
 
 
 def _object_to_skill_file_helper(py_obj, file_obj):
