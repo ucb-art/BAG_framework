@@ -25,6 +25,7 @@ and will strip the newline before sending result back to client.
 import traceback
 
 from .. import io
+import numpy as np
 
 
 def _object_to_skill_file_helper(py_obj, file_obj):
@@ -43,13 +44,13 @@ def _object_to_skill_file_helper(py_obj, file_obj):
     if isinstance(py_obj, str):
         # string
         file_obj.write(py_obj)
-    elif isinstance(py_obj, float):
+    elif isinstance(py_obj, (float, np.floating)):
         # prepend type flag
         file_obj.write('#float {:f}'.format(py_obj))
     elif isinstance(py_obj, bool):
         bool_val = 1 if py_obj else 0
         file_obj.write('#bool {:d}'.format(bool_val))
-    elif isinstance(py_obj, int):
+    elif isinstance(py_obj, (int, np.integer)):
         # prepend type flag
         file_obj.write('#int {:d}'.format(py_obj))
     elif isinstance(py_obj, list) or isinstance(py_obj, tuple):
