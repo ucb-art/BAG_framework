@@ -583,7 +583,7 @@ class SkillInterface(DbAccess):
             path to the cell directory.
         """
         # use yaml.load to remove outermost quotation marks
-        lib_dir = yaml.load(self._eval_skill(f'get_lib_directory( {lib_name} )'))
+        lib_dir = yaml.load(self._eval_skill(f'get_lib_directory( "{lib_name}" )'))
         if not lib_dir:
             raise ValueError('Library %s not found.' % lib_name)
         return os.path.join(lib_dir, cell_name)
