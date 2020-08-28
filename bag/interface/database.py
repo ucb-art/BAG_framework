@@ -9,9 +9,7 @@ import os
 import abc
 import traceback
 
-import yaml
-
-from ..io.file import make_temp_dir, read_file, write_file
+from ..io.file import make_temp_dir, read_file, write_file, read_yaml
 from ..verification import make_checker
 from .base import InterfaceBase
 
@@ -578,7 +576,7 @@ class DbAccess(InterfaceBase, abc.ABC):
 
         # update netlist file
         content = self.parse_schematic_template(lib_name, cell_name)
-        sch_info = yaml.load(content, Loader=yaml.FullLoader)
+        sch_info = read_yaml(content)
         try:
             write_file(yaml_file, content)
         except IOError:
