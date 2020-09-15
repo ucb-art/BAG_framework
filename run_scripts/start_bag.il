@@ -1168,7 +1168,6 @@ procedure( create_layout_with_pcell(lib_name cell_name view_name inst_lib inst_c
                 dbCreateLabel(lay_cv label_lpp label_location label_text label_just label_orientation label_font label_height )
             )
         )
-
         dbClose(inst_master)
         dbSave(lay_cv)
         dbClose(lay_cv)
@@ -1185,15 +1184,21 @@ procedure( create_path_seg_helper(cv lay p0 p1 width start_s end_s)
             diag_ext = width * sqrt(2) / 2
         )
 
-        bext = 0
-        eext = 0
-        when( start_s == "round"
-            bext = width / 2
+        bext = width/2
+        eext = width/2
+        if( start_s == "round" then
             start_s = "custom"
+        else
+            when( start_s == "truncate"
+                bext = 0
+            )
         )
-        when( end_s == "round"
-            eext = width / 2
+        if( end_s == "round" then
             end_s = "custom"
+        else
+            when( end_s == "truncate"
+                eext = 0
+            )
         )
         info_list = list(bext eext list(diag_ext diag_ext width/2 diag_ext diag_ext width/2))
         dbCreatePathSeg(cv lay p0 p1 width start_s end_s info_list)
@@ -1248,15 +1253,6 @@ procedure( create_layout_helper( cv tech_file inst_list rect_list via_list pin_l
                     if( inst->params != nil then
                         ; create pcell instance
                         obj = dbCreateParamInst(cv inst_cv inst->name inst->loc inst->orient 1 inst->params)
-                        ; execute parameter callbacks
-                        when( obj
-                            if( inst->param_order != nil then
-                                param_order = inst->param_order
-                            else
-                                param_order = mapcar( lambda( (x) car(x) ) inst->params )
-                            )
-                            CCSinvokeCdfCallbacks(obj ?order param_order)
-                        )
                     else
                         obj = dbCreateInst(cv inst_cv inst->name inst->loc inst->orient)
                     )
@@ -1266,15 +1262,6 @@ procedure( create_layout_helper( cv tech_file inst_list rect_list via_list pin_l
                         obj = dbCreateParamSimpleMosaic(cv inst_cv inst->name inst->loc inst->orient
                                                         inst->num_rows inst->num_cols inst->sp_rows inst->sp_cols
                                                         inst->params)
-                        ; execute parameter callbacks
-                        when( obj
-                            if( inst->param_order != nil then
-                                param_order = inst->param_order
-                            else
-                                param_order = mapcar( lambda( (x) car(x) ) inst->params )
-                            )
-                            CCSinvokeCdfCallbacks(obj ?order param_order)
-                        )
                     else
                         obj = dbCreateSimpleMosaic(cv inst_cv inst->name inst->loc inst->orient
                                                    inst->num_rows inst->num_cols inst->sp_rows inst->sp_cols)
@@ -1460,7 +1447,15 @@ procedure( create_layout( lib_name view_name via_tech layout_f "ttt" )
             printf("Creating %s__%s (%s)\n" lib_name cell_name view_name)
             create_layout_helper(cv tech_file inst_list rect_list via_list pin_list path_list
                                  blockage_list boundary_list polygon_list)
-
+            
+            if( exists( inst inst_list inst->params != nil ) ; Check whether cellview contains any Pcell instances
+                if( getd('CCSinvokeCdfCallbacks) != nil then ; Found function handle for callbacks, run callbacks 
+                    printf("Running callbacks for cellview: %s\n" cell_name)
+                    (CCSinvokeCdfCallbacks cv)
+                else
+                    warn("Couldn't find function CCSinvokeCdfCallbacks! Pcell instance generation might not work correctly!\n")
+                )    
+            )
             dbSave(cv)
             dbClose(cv)
         )
@@ -1485,6 +1480,7 @@ procedure( release_write_locks( lib_name cell_view_list_f "tt" )
         t
     )
 )
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1567,7 +1563,7 @@ procedure( open_adexl_session(tb_lib tb_cell tb_view session_name mode "ttttt")
         unless( session = axlCreateSession(session_name)
             error("Cannot create temporary adexl session: %s" session_name)
         )
-        unless( sdb = axlSetMainSetupDBLCV(session tb_lib tb_cell tb_view)
+        unless( sdb = axlSetMainSetupDBLCV(session tb_lib tb_cell tb_view ?mode mode)
             axlCloseSession(session)
             error("Cannot load adexl database from %s__%s (%s)" tb_lib tb_cell tb_view)
         )
