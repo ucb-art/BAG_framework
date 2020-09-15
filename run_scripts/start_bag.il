@@ -1184,21 +1184,15 @@ procedure( create_path_seg_helper(cv lay p0 p1 width start_s end_s)
             diag_ext = width * sqrt(2) / 2
         )
 
-        bext = width/2
-        eext = width/2
-        if( start_s == "round" then
+        bext = 0
+        eext = 0 
+        when( start_s == "round"
+            bext = width / 2
             start_s = "custom"
-        else
-            when( start_s == "truncate"
-                bext = 0
-            )
         )
-        if( end_s == "round" then
+        when( end_s == "round"
+            eext = width / 2
             end_s = "custom"
-        else
-            when( end_s == "truncate"
-                eext = 0
-            )
         )
         info_list = list(bext eext list(diag_ext diag_ext width/2 diag_ext diag_ext width/2))
         dbCreatePathSeg(cv lay p0 p1 width start_s end_s info_list)
@@ -1563,7 +1557,7 @@ procedure( open_adexl_session(tb_lib tb_cell tb_view session_name mode "ttttt")
         unless( session = axlCreateSession(session_name)
             error("Cannot create temporary adexl session: %s" session_name)
         )
-        unless( sdb = axlSetMainSetupDBLCV(session tb_lib tb_cell tb_view ?mode mode)
+        unless( sdb = axlSetMainSetupDBLCV(session tb_lib tb_cell tb_view)
             axlCloseSession(session)
             error("Cannot load adexl database from %s__%s (%s)" tb_lib tb_cell tb_view)
         )
