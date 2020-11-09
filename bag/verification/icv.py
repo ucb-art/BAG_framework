@@ -168,11 +168,11 @@ class ICV(VirtuosoChecker):
         with open_temp(prefix='lvsLog', dir=run_dir, delete=False) as logf:
             log_file = logf.name
 
-        # set _drPROCESS
-        dr_process_str = '_drPROCESS=' + lvs_params_actual['_drPROCESS']
+        # cmd_options
+        cmd_options = lvs_params_actual['cmd_options']
 
-        cmd = ['icv', '-D', dr_process_str, '-i', lay_file, '-s', sch_file, '-sf', 'SPICE',
-               '-f', 'GDSII', '-c', cell_name, '-vue', '-I']
+        cmd = ['icv'] + cmd_options + ['-i', lay_file, '-s', sch_file, '-sf', 'SPICE', '-f', 'GDSII', '-c', cell_name,
+                                       '-vue', '-I']
         for f in self.lvs_link_files:
             cmd.append(f)
 
@@ -216,13 +216,10 @@ class ICV(VirtuosoChecker):
 
         if self.rcx_mode == 'starrc':
             # first: run Extraction LVS
-            lvs_params_actual = self.default_lvs_params.copy()
+            cmd_options = rcx_params_actual['cmd_options']
 
-            dr_process_str = '_drPROCESS=' + lvs_params_actual['_drPROCESS']
-
-            cmd = ['icv', '-D', '_drRCextract', '-D', dr_process_str, '-D', '_drICFOAlayers',
-                   '-i', lay_file, '-s', sch_file, '-sf', 'SPICE', '-f', 'GDSII',
-                   '-c', cell_name, '-I']
+            cmd = ['icv'] + cmd_options + ['-i', lay_file, '-s', sch_file, '-sf', 'SPICE', '-f', 'GDSII',
+                                           '-c', cell_name, '-I']
             for f in self.lvs_link_files:
                 cmd.append(f)
 
@@ -231,7 +228,7 @@ class ICV(VirtuosoChecker):
             env_copy['PWD'] = run_dir
             flow_list.append((cmd, log_file, env_copy, run_dir, lvs_passed))
 
-            # second: setup CCP
+            # second: setup StarXtract
             # make symlinks
             if self.rcx_link_files:
                 for source_file in self.rcx_link_files:
