@@ -1247,6 +1247,15 @@ procedure( create_layout_helper( cv tech_file inst_list rect_list via_list pin_l
                     if( inst->params != nil then
                         ; create pcell instance
                         obj = dbCreateParamInst(cv inst_cv inst->name inst->loc inst->orient 1 inst->params)
+                        when( obj
+                            if( inst->param_order != nil then
+                                param_order=inst->param_order
+                            else
+                                param_order= mapcar( lambda( (x) car(x) ) inst->params)
+                            )
+                            CCSinvokeInstCdfCallbacks(obj ?order param_order)
+                        )
+
                     else
                         obj = dbCreateInst(cv inst_cv inst->name inst->loc inst->orient)
                     )
@@ -1256,6 +1265,14 @@ procedure( create_layout_helper( cv tech_file inst_list rect_list via_list pin_l
                         obj = dbCreateParamSimpleMosaic(cv inst_cv inst->name inst->loc inst->orient
                                                         inst->num_rows inst->num_cols inst->sp_rows inst->sp_cols
                                                         inst->params)
+                        when( obj
+                            if( inst->param_order != nil then
+                                param_order=inst->param_order
+                            else
+                                param_order= mapcar( lambda( (x) car(x) ) inst->params)
+                            )
+                            CCSinvokeInstCdfCallbacks(obj ?order param_order)
+                        )
                     else
                         obj = dbCreateSimpleMosaic(cv inst_cv inst->name inst->loc inst->orient
                                                    inst->num_rows inst->num_cols inst->sp_rows inst->sp_cols)
@@ -1441,15 +1458,6 @@ procedure( create_layout( lib_name view_name via_tech layout_f "ttt" )
             printf("Creating %s__%s (%s)\n" lib_name cell_name view_name)
             create_layout_helper(cv tech_file inst_list rect_list via_list pin_list path_list
                                  blockage_list boundary_list polygon_list)
-            
-            if( exists( inst inst_list inst->params != nil ) ; Check whether cellview contains any Pcell instances
-                if( getd('CCSinvokeCdfCallbacks) != nil then ; Found function handle for callbacks, run callbacks 
-                    printf("Running callbacks for cellview: %s\n" cell_name)
-                    (CCSinvokeCdfCallbacks cv)
-                else
-                    warn("Couldn't find function CCSinvokeCdfCallbacks! Pcell instance generation might not work correctly!\n")
-                )    
-            )
             dbSave(cv)
             dbClose(cv)
         )
