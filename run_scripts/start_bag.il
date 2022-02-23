@@ -1168,7 +1168,6 @@ procedure( create_layout_with_pcell(lib_name cell_name view_name inst_lib inst_c
                 dbCreateLabel(lay_cv label_lpp label_location label_text label_just label_orientation label_font label_height )
             )
         )
-
         dbClose(inst_master)
         dbSave(lay_cv)
         dbClose(lay_cv)
@@ -1186,7 +1185,7 @@ procedure( create_path_seg_helper(cv lay p0 p1 width start_s end_s)
         )
 
         bext = 0
-        eext = 0
+        eext = 0 
         when( start_s == "round"
             bext = width / 2
             start_s = "custom"
@@ -1248,15 +1247,15 @@ procedure( create_layout_helper( cv tech_file inst_list rect_list via_list pin_l
                     if( inst->params != nil then
                         ; create pcell instance
                         obj = dbCreateParamInst(cv inst_cv inst->name inst->loc inst->orient 1 inst->params)
-                        ; execute parameter callbacks
                         when( obj
                             if( inst->param_order != nil then
-                                param_order = inst->param_order
+                                param_order=inst->param_order
                             else
-                                param_order = mapcar( lambda( (x) car(x) ) inst->params )
+                                param_order= mapcar( lambda( (x) car(x) ) inst->params)
                             )
-                            CCSinvokeCdfCallbacks(obj ?order param_order)
+                            CCSinvokeInstCdfCallbacks(obj ?order param_order)
                         )
+
                     else
                         obj = dbCreateInst(cv inst_cv inst->name inst->loc inst->orient)
                     )
@@ -1266,14 +1265,13 @@ procedure( create_layout_helper( cv tech_file inst_list rect_list via_list pin_l
                         obj = dbCreateParamSimpleMosaic(cv inst_cv inst->name inst->loc inst->orient
                                                         inst->num_rows inst->num_cols inst->sp_rows inst->sp_cols
                                                         inst->params)
-                        ; execute parameter callbacks
                         when( obj
                             if( inst->param_order != nil then
-                                param_order = inst->param_order
+                                param_order=inst->param_order
                             else
-                                param_order = mapcar( lambda( (x) car(x) ) inst->params )
+                                param_order= mapcar( lambda( (x) car(x) ) inst->params)
                             )
-                            CCSinvokeCdfCallbacks(obj ?order param_order)
+                            CCSinvokeInstCdfCallbacks(obj ?order param_order)
                         )
                     else
                         obj = dbCreateSimpleMosaic(cv inst_cv inst->name inst->loc inst->orient
@@ -1460,7 +1458,6 @@ procedure( create_layout( lib_name view_name via_tech layout_f "ttt" )
             printf("Creating %s__%s (%s)\n" lib_name cell_name view_name)
             create_layout_helper(cv tech_file inst_list rect_list via_list pin_list path_list
                                  blockage_list boundary_list polygon_list)
-
             dbSave(cv)
             dbClose(cv)
         )
@@ -1485,6 +1482,7 @@ procedure( release_write_locks( lib_name cell_view_list_f "tt" )
         t
     )
 )
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
