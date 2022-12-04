@@ -611,6 +611,8 @@ class MasterDB(abc.ABC):
             else:
                 if debug:
                     print('finalizing master')
+                # In case master.finalize has a generates a child with the same cell name, add master name now
+                self._used_cell_names.add(master.cell_name)
                 start = time.time()
                 master.finalize()
                 end = time.time()
@@ -633,6 +635,8 @@ class MasterDB(abc.ABC):
             else:
                 if debug:
                     print('finalizing master')
+                # In case master.finalize has a generates a child with the same cell name, add master name now
+                self._used_cell_names.add(master.cell_name)
                 start = time.time()
                 master.finalize()
                 end = time.time()
