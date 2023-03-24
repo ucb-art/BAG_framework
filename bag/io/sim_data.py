@@ -248,8 +248,13 @@ def load_sim_file(fname):
                 dset_data = np.array([v.decode(encoding=bag_encoding, errors=bag_codec_error) for v in dset_data])
 
             if 'sweep_params' in dset.attrs:
-                cur_swp = [swp.decode(encoding=bag_encoding, errors=bag_codec_error)
-                           for swp in dset.attrs['sweep_params']]
+                print(dset.attrs['sweep_params'])
+                cur_swp = []
+                for swp in dset.attrs['sweep_params']:
+                    if isinstance(swp, bytes):
+                        cur_swp.append(swp.decode(encoding=bag_encoding, errors=bag_codec_error))
+                    else:
+                        cur_swp.append(swp)
                 results[name] = SweepArray(dset_data, cur_swp)
                 sweep_params[name] = cur_swp
             else:
